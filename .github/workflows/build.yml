@@ -1,0 +1,66 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+        
+    - name: Install npm dependencies
+      run: npm ci
+      
+    - name: Build web app
+      run: npx vite build
+      
+    - name: Sync Capacitor
+      run: npx cap sync android
+      
+    - name: Make gradlew executable
+      run: chmod +x android/gradlew
+      
+    - name: Build APK (Debug - Universal)
+      working-directory: android
+      run: ./gradlew assembleDebug
+      
+    - name: Build APK (Release - Universal)
+      working-directory: android
+      run: ./gradlew assembleRelease
+      
+    - name: List APK outputs
+      run: find android/app/build/outputs -name "*.apk" -type f
+      
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: qwen-code-debug-universal
+        path: android/app/build/outputs/apk/debug/*.apk
+        
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: qwen-code-release-universal
+        path: android/app/build/outputs/apk/release/*.apk

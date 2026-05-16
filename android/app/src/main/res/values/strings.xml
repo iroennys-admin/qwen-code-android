@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Qwen Code</string>
+    <string name="title_activity_main">Qwen Code</string>
+    <string name="package_name">com.qwen.code.android</string>
+    <string name="custom_url_scheme">com.qwen.code.android</string>
+</resources>

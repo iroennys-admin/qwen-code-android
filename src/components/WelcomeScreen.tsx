@@ -7,12 +7,12 @@ interface WelcomeProps {
 }
 
 const QUICK_PROMPTS = [
-  { icon: '🔧', text: 'Help me debug this code', prompt: 'Help me debug my code. Show me common debugging strategies and tools.' },
-  { icon: '📝', text: 'Write a Python script', prompt: 'Write a Python script that ' },
-  { icon: '🌐', text: 'Fetch a webpage', prompt: 'Fetch the contents of ' },
-  { icon: '💻', text: 'Run a command', prompt: 'Run the command: ' },
-  { icon: '📁', text: 'Explore files', prompt: 'List the files in the current directory and help me understand the project structure.' },
-  { icon: '🤖', text: 'Explain code', prompt: 'Explain how this code works: ' },
+  { icon: '\u26A1', text: 'Ejecutar codigo Python', prompt: 'Escribe y ejecuta un script Python que imprima los numeros del 1 al 10 y sus cuadrados' },
+  { icon: '\uD83D\uDEE0\uFE0F', text: 'Crear un proyecto', prompt: 'Crea un proyecto Python con estructura de carpetas, archivo main.py con un hola mundo, y requirements.txt' },
+  { icon: '\uD83D\uDD0D', text: 'Debuggear codigo', prompt: 'Ayudame a debuggear mi codigo. Primero lista los archivos del directorio actual para ver que tengo.' },
+  { icon: '\uD83D\uDCC1', text: 'Explorar archivos', prompt: 'Lista los archivos del directorio actual y explicame la estructura del proyecto' },
+  { icon: '\uD83C\uDF10', text: 'Obtener pagina web', prompt: 'Obtén el contenido de una pagina web y muestrame un resumen' },
+  { icon: '\uD83D\uDCBB', text: 'Ejecutar comando', prompt: 'Muestra informacion del sistema: version de Python, Node.js, y el sistema operativo' },
 ];
 
 export default function WelcomeScreen({ config, onSend }: WelcomeProps) {
@@ -41,6 +41,7 @@ export default function WelcomeScreen({ config, onSend }: WelcomeProps) {
         fontWeight: 700,
         marginBottom: 'var(--space-lg)',
         boxShadow: '0 0 40px rgba(107, 107, 255, 0.3)',
+        animation: 'pulse 3s infinite',
       }}>
         Q
       </div>
@@ -62,9 +63,9 @@ export default function WelcomeScreen({ config, onSend }: WelcomeProps) {
         textAlign: 'center',
         maxWidth: 400,
         lineHeight: 1.6,
-        marginBottom: 'var(--space-xl)',
+        marginBottom: 'var(--space-lg)',
       }}>
-        Tu asistente de IA con acceso completo al sistema. Ejecuta comandos, lee y escribe archivos, y más.
+        Tu agente de IA con acceso completo al sistema. Ejecuta codigo, crea proyectos, debuguea, y mucho mas. Solo dile que hacer.
       </p>
       
       {!hasKey && (
@@ -78,13 +79,36 @@ export default function WelcomeScreen({ config, onSend }: WelcomeProps) {
           width: '100%',
         }}>
           <div style={{ color: 'var(--error)', fontWeight: 600, fontSize: 13, marginBottom: 'var(--space-xs)' }}>
-            ⚠️ API Key no configurada
+            API Key no configurada
           </div>
           <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-            Ve a Configuración para agregar tu API key y comenzar a usar Qwen Code.
+            Ve a Configuracion para agregar tu API key y comenzar a usar Qwen Code.
           </div>
         </div>
       )}
+      
+      {/* Capabilities */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 'var(--space-xs)',
+        justifyContent: 'center',
+        maxWidth: 500,
+        marginBottom: 'var(--space-xl)',
+      }}>
+        {['Ejecutar codigo', 'Shell commands', 'Leer/Escribir archivos', 'Debuggear', 'Crear proyectos', 'Web fetch'].map(cap => (
+          <span key={cap} style={{
+            fontSize: 11,
+            background: 'rgba(107, 107, 255, 0.1)',
+            border: '1px solid rgba(107, 107, 255, 0.15)',
+            color: 'var(--accent-secondary)',
+            padding: '4px 10px',
+            borderRadius: 'var(--radius-full)',
+          }}>
+            {cap}
+          </span>
+        ))}
+      </div>
       
       {/* Quick Prompts */}
       <div style={{
@@ -156,7 +180,7 @@ function InputBar({ onSend, disabled }: { onSend: (msg: string) => void; disable
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-        placeholder={disabled ? 'Configura tu API key primero...' : 'Escribe un mensaje...'}
+        placeholder={disabled ? 'Configura tu API key primero...' : 'Dime que hacer...'}
         disabled={disabled}
         style={{
           flex: 1,

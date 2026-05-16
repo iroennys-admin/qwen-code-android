@@ -23,19 +23,26 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   isStreaming?: boolean;
+  thinking?: string;
   model?: string;
   provider?: string;
+  /** Agent step number for multi-step tool use */
+  step?: number;
 }
 
 export interface ToolCall {
   id: string;
-  type: 'shell' | 'file_read' | 'file_write' | 'file_edit' | 'web_fetch' | 'glob' | 'grep';
+  type: ToolType;
   name: string;
   params: Record<string, unknown>;
   status: 'pending' | 'running' | 'completed' | 'error' | 'waiting_approval';
   output?: string;
   requiresApproval: boolean;
+  /** Duration in ms */
+  duration?: number;
 }
+
+export type ToolType = 'shell' | 'file_read' | 'file_write' | 'file_edit' | 'web_fetch' | 'glob' | 'grep' | 'code_execute' | 'mkdir' | 'rm' | 'mv' | 'cp' | 'list_dir';
 
 export interface ToolResult {
   toolCallId: string;
@@ -67,15 +74,20 @@ export interface AppConfig {
   lowRamMode: boolean;
   fontSize: number;
   theme: 'dark' | 'light';
+  /** Max agent loop iterations to prevent infinite loops */
+  maxAgentSteps: number;
+  /** Working directory for shell commands */
+  workingDir: string;
 }
 
 export interface StreamChunk {
-  type: 'content' | 'tool_call' | 'tool_result' | 'thinking' | 'error' | 'done';
+  type: 'content' | 'tool_call' | 'tool_result' | 'thinking' | 'error' | 'done' | 'agent_step';
   content?: string;
   toolCall?: ToolCall;
   toolResult?: ToolResult;
   thinking?: string;
   error?: string;
+  step?: number;
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -89,4 +101,30 @@ export interface ShellResult {
   exitCode: number;
 }
 
+/** API message format - matches OpenAI chat completion API */
+export interface ApiMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: ApiToolCall[];
+  tool_call_id?: string;
+}
+
+export interface ApiToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings';
+
+/** Agent run state for UI feedback */
+export interface AgentState {
+  status: 'idle' | 'thinking' | 'calling_tool' | 'executing' | 'waiting_approval' | 'done' | 'error';
+  currentStep: number;
+  totalSteps: number;
+  thinkingText?: string;
+  currentTool?: string;
+}

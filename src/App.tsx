@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import type { AppConfig, ChatMessage, ViewMode, ToolCall, StreamChunk } from './types';
+import type { AppConfig, ChatMessage, ViewMode, ToolCall, AgentState, ApiMessage } from './types';
 import { DEFAULT_CONFIG } from './utils/config';
-import { streamChat } from './services/api';
-import { executeToolCall, isNative } from './services/bridge';
+import { runAgentLoop, chatMessagesToApiMessages } from './services/agent';
+import { isNative } from './services/bridge';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
 import TerminalView from './components/TerminalView';
@@ -10,7 +10,7 @@ import FileExplorer from './components/FileExplorer';
 import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
 
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 
 function loadConfig(): AppConfig {
   try {
@@ -19,11 +19,15 @@ function loadConfig(): AppConfig {
       const saved = localStorage.getItem('qwencode_config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const merged = { ...DEFAULT_CONFIG, ...parsed, providers: parsed.providers?.map((p: any) => ({
-          ...DEFAULT_CONFIG.providers.find(dp => dp.id === p.id),
-          ...p,
-          models: DEFAULT_CONFIG.providers.find(dp => dp.id === p.id)?.models || p.models || []
-        })) || DEFAULT_CONFIG.providers };
+        const merged = { 
+          ...DEFAULT_CONFIG, 
+          ...parsed, 
+          providers: parsed.providers?.map((p: any) => ({
+            ...DEFAULT_CONFIG.providers.find(dp => dp.id === p.id),
+            ...p,
+            models: DEFAULT_CONFIG.providers.find(dp => dp.id === p.id)?.models || p.models || []
+          })) || DEFAULT_CONFIG.providers 
+        };
         return merged;
       }
     }
@@ -49,7 +53,7 @@ function loadMessages(): ChatMessage[] {
 
 function saveMessages(messages: ChatMessage[]) {
   try {
-    localStorage.setItem('qwencode_messages', JSON.stringify(messages.slice(-100)));
+    localStorage.setItem('qwencode_messages', JSON.stringify(messages.slice(-200)));
   } catch {}
 }
 
@@ -59,7 +63,8 @@ export default function App() {
   const [view, setView] = useState<ViewMode>('chat');
   const [isGenerating, setIsGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [agentState, setAgentState] = useState<AgentState>({ status: 'idle', currentStep: 0, totalSteps: 0 });
+  const abortRef = useRef(false);
 
   // Save config and messages on change
   useEffect(() => { saveConfig(config); }, [config]);
@@ -75,6 +80,8 @@ export default function App() {
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isGenerating) return;
     
+    abortRef.current = false;
+    
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
       role: 'user',
@@ -89,6 +96,7 @@ export default function App() {
       timestamp: Date.now() + 1,
       isStreaming: true,
       toolCalls: [],
+      thinking: '',
       model: config.activeModel,
       provider: config.activeProvider,
     };
@@ -97,14 +105,26 @@ export default function App() {
     setMessages(newMessages);
     setIsGenerating(true);
     
+    // Build API message history from previous messages (excluding the new streaming one)
+    const previousMessages = newMessages.slice(0, -1);
+    const apiHistory = chatMessagesToApiMessages(previousMessages.filter(m => 
+      m.role === 'user' || m.role === 'assistant'
+    ));
+    
+    // Accumulators for the current response
+    let fullContent = '';
+    let fullThinking = '';
+    const toolCalls: ToolCall[] = [];
+    const toolCallMap = new Map<string, ToolCall>();
+    
     try {
-      const chatMessages = newMessages.filter(m => m.role === 'user' || (m.role === 'assistant' && !m.isStreaming));
-      let fullContent = '';
-      const toolCalls: ToolCall[] = [];
-      
-      for await (const chunk of streamChat(config, chatMessages.slice(0, -1))) {
-        if (chunk.type === 'content' && chunk.content) {
-          fullContent += chunk.content;
+      await runAgentLoop(config, apiHistory, content.trim(), {
+        onStateChange: (state) => {
+          setAgentState(state);
+        },
+        
+        onContent: (text) => {
+          fullContent += text;
           setMessages(prev => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -113,36 +133,23 @@ export default function App() {
             }
             return updated;
           });
-        }
+        },
         
-        if (chunk.type === 'thinking' && chunk.thinking) {
-          // Show thinking indicator
-        }
+        onThinking: (text) => {
+          fullThinking += text;
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === 'assistant') {
+              updated[updated.length - 1] = { ...last, thinking: fullThinking };
+            }
+            return updated;
+          });
+        },
         
-        if (chunk.type === 'tool_call' && chunk.toolCall) {
-          const tc = chunk.toolCall;
+        onToolCall: (tc) => {
           toolCalls.push(tc);
-          
-          // Check if tool needs approval
-          if (tc.requiresApproval && config.approvalMode === 'ask') {
-            tc.status = 'waiting_approval';
-          } else {
-            // Auto-execute
-            tc.status = 'running';
-            setMessages(prev => {
-              const updated = [...prev];
-              const last = updated[updated.length - 1];
-              if (last.role === 'assistant') {
-                updated[updated.length - 1] = { ...last, toolCalls: [...toolCalls] };
-              }
-              return updated;
-            });
-            
-            const result = await executeToolCall(tc.name, tc.params);
-            tc.output = result.output;
-            tc.status = result.error ? 'error' : 'completed';
-          }
-          
+          toolCallMap.set(tc.id, tc);
           setMessages(prev => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -151,75 +158,144 @@ export default function App() {
             }
             return updated;
           });
-        }
+        },
         
-        if (chunk.type === 'error' && chunk.error) {
-          fullContent += `\n\n❌ **Error:** ${chunk.error}`;
+        onToolStart: (toolCallId) => {
+          const tc = toolCallMap.get(toolCallId);
+          if (tc) {
+            tc.status = 'running';
+            setMessages(prev => [...prev]);
+          }
+        },
+        
+        onToolResult: (toolCallId, output, error) => {
+          const tc = toolCallMap.get(toolCallId);
+          if (tc) {
+            tc.output = output;
+            tc.status = error ? 'error' : 'completed';
+            setMessages(prev => [...prev]);
+          }
+        },
+        
+        onToolApproval: async (tc) => {
+          // Set the tool call to waiting_approval
+          const existing = toolCallMap.get(tc.id);
+          if (existing) {
+            existing.status = 'waiting_approval';
+            existing.requiresApproval = true;
+          }
+          setMessages(prev => [...prev]);
+          
+          // Wait for user approval or denial
+          return new Promise<boolean>((resolve) => {
+            // Store the resolve function so the UI can call it
+            window.__qwenApprovalResolvers = window.__qwenApprovalResolvers || {};
+            window.__qwenApprovalResolvers[tc.id] = resolve;
+          });
+        },
+        
+        onDone: (apiMessages) => {
+          // Finalize the assistant message
           setMessages(prev => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
             if (last.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, content: fullContent };
+              updated[updated.length - 1] = { 
+                ...last, 
+                isStreaming: false, 
+                content: fullContent, 
+                toolCalls: [...toolCalls],
+                thinking: fullThinking || undefined,
+              };
             }
             return updated;
           });
-        }
+        },
         
-        if (chunk.type === 'done') {
-          break;
-        }
-      }
-      
-      // Finalize assistant message
-      setMessages(prev => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last.role === 'assistant') {
-          updated[updated.length - 1] = { ...last, isStreaming: false, content: fullContent, toolCalls: [...toolCalls] };
-        }
-        return updated;
+        onError: (error) => {
+          fullContent += `\n\n**Error:** ${error}`;
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === 'assistant') {
+              updated[updated.length - 1] = { ...last, content: fullContent, isStreaming: false };
+            }
+            return updated;
+          });
+        },
+        
+        shouldAbort: () => abortRef.current,
       });
+      
     } catch (err: any) {
       setMessages(prev => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last.role === 'assistant') {
-          updated[updated.length - 1] = { ...last, content: `Error: ${err.message}`, isStreaming: false };
+          updated[updated.length - 1] = { 
+            ...last, 
+            content: fullContent || `Error: ${err.message}`, 
+            isStreaming: false,
+            toolCalls: [...toolCalls],
+          };
         }
         return updated;
       });
     } finally {
       setIsGenerating(false);
+      setAgentState({ status: 'idle', currentStep: 0, totalSteps: 0 });
     }
   }, [config, messages, isGenerating]);
 
   const approveToolCall = useCallback(async (msgId: string, toolCallId: string) => {
-    const msg = messages.find(m => m.id === msgId);
-    if (!msg?.toolCalls) return;
+    // Find and resolve the approval promise
+    const resolvers = (window as any).__qwenApprovalResolvers;
+    if (resolvers && resolvers[toolCallId]) {
+      resolvers[toolCallId](true);
+      delete resolvers[toolCallId];
+    }
     
-    const tc = msg.toolCalls.find(t => t.id === toolCallId);
-    if (!tc) return;
-    
-    tc.status = 'running';
-    setMessages(prev => [...prev]);
-    
-    const result = await executeToolCall(tc.name, tc.params);
-    tc.output = result.output;
-    tc.status = result.error ? 'error' : 'completed';
-    setMessages(prev => [...prev]);
-  }, [messages]);
+    // Update the tool call status in the UI
+    setMessages(prev => {
+      const updated = prev.map(m => {
+        if (m.id === msgId && m.toolCalls) {
+          return {
+            ...m,
+            toolCalls: m.toolCalls.map(tc => 
+              tc.id === toolCallId ? { ...tc, status: 'running' as const } : tc
+            ),
+          };
+        }
+        return m;
+      });
+      return updated;
+    });
+  }, []);
 
   const denyToolCall = useCallback((msgId: string, toolCallId: string) => {
-    const msg = messages.find(m => m.id === msgId);
-    if (!msg?.toolCalls) return;
+    // Find and resolve the approval promise with false
+    const resolvers = (window as any).__qwenApprovalResolvers;
+    if (resolvers && resolvers[toolCallId]) {
+      resolvers[toolCallId](false);
+      delete resolvers[toolCallId];
+    }
     
-    const tc = msg.toolCalls.find(t => t.id === toolCallId);
-    if (!tc) return;
-    
-    tc.status = 'error';
-    tc.output = 'Denied by user';
-    setMessages(prev => [...prev]);
-  }, [messages]);
+    // Update the tool call status
+    setMessages(prev => {
+      const updated = prev.map(m => {
+        if (m.id === msgId && m.toolCalls) {
+          return {
+            ...m,
+            toolCalls: m.toolCalls.map(tc => 
+              tc.id === toolCallId ? { ...tc, status: 'error' as const, output: 'Denied by user' } : tc
+            ),
+          };
+        }
+        return m;
+      });
+      return updated;
+    });
+  }, []);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
@@ -227,9 +303,21 @@ export default function App() {
   }, []);
 
   const stopGeneration = useCallback(() => {
-    abortRef.current?.abort();
+    abortRef.current = true;
     setIsGenerating(false);
+    setAgentState({ status: 'idle', currentStep: 0, totalSteps: 0 });
   }, []);
+
+  // Get status text for the agent state
+  const getAgentStatusText = () => {
+    switch (agentState.status) {
+      case 'thinking': return 'Pensando...';
+      case 'calling_tool': return `Llamando herramienta: ${agentState.currentTool || ''}`;
+      case 'executing': return `Ejecutando: ${agentState.currentTool || ''}`;
+      case 'waiting_approval': return 'Esperando aprobación...';
+      default: return '';
+    }
+  };
 
   return (
     <div style={{
@@ -314,7 +402,22 @@ export default function App() {
                 padding: '2px 8px',
                 borderRadius: 'var(--radius-full)',
               }}>
-                🌐 Proxy
+                Proxy
+              </span>
+            )}
+            {agentState.status !== 'idle' && isGenerating && (
+              <span style={{
+                fontSize: 11,
+                color: 'var(--warning)',
+                background: 'rgba(251, 191, 36, 0.1)',
+                padding: '2px 8px',
+                borderRadius: 'var(--radius-full)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}>
+                <span style={{ animation: 'pulse 1s infinite' }}>●</span>
+                Paso {agentState.currentStep} — {getAgentStatusText()}
               </span>
             )}
           </div>
@@ -333,7 +436,7 @@ export default function App() {
                 fontWeight: 600,
               }}
             >
-              ⏹ Stop
+              Detener
             </button>
           )}
         </div>
@@ -351,6 +454,7 @@ export default function App() {
                 onApprove={approveToolCall}
                 onDeny={denyToolCall}
                 config={config}
+                agentState={agentState}
               />
             )
           )}
@@ -367,4 +471,11 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+// Extend window type for approval resolvers
+declare global {
+  interface Window {
+    __qwenApprovalResolvers?: Record<string, (approved: boolean) => void>;
+  }
 }

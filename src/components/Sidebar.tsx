@@ -72,7 +72,7 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 16 }}>Qwen Code</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI Agent v1.0</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI Agent v2.0</div>
             </div>
           </div>
         </div>

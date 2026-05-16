@@ -315,7 +315,7 @@ function GeneralTab({ config, updateConfig }: { config: AppConfig; updateConfig:
       </SettingRow>
       
       {/* Approval Mode */}
-      <SettingRow label="Modo de aprobación" description="Cómo manejar la ejecución de herramientas">
+      <SettingRow label="Modo de aprobacion" description="Como manejar la ejecucion de herramientas">
         <select
           value={config.approvalMode}
           onChange={(e) => updateConfig({ approvalMode: e.target.value as any })}
@@ -333,6 +333,24 @@ function GeneralTab({ config, updateConfig }: { config: AppConfig; updateConfig:
           <option value="auto_edit">Auto-editar (pedir para shell)</option>
           <option value="yolo">YOLO (auto-todo)</option>
         </select>
+      </SettingRow>
+      
+      {/* Max Agent Steps */}
+      <SettingRow label="Max pasos del agente" description="Limite de iteraciones del loop agentic (prevenir loops infinitos)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <input
+            type="range"
+            min="5"
+            max="50"
+            step="5"
+            value={config.maxAgentSteps || 25}
+            onChange={(e) => updateConfig({ maxAgentSteps: parseInt(e.target.value) })}
+            style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
+          />
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', width: 30 }}>
+            {config.maxAgentSteps || 25}
+          </span>
+        </div>
       </SettingRow>
       
       {/* Font Size */}
@@ -497,7 +515,7 @@ function AboutTab() {
       </div>
       
       <h2 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700 }}>Qwen Code</h2>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v1.0.0 — Android Edition</p>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v2.0.0 — Agentic Edition</p>
       
       <div style={{
         background: 'var(--bg-card)',
@@ -510,13 +528,13 @@ function AboutTab() {
         color: 'var(--text-secondary)',
         lineHeight: 1.8,
       }}>
-        <div>🤖 Agente de IA con múltiples proveedores</div>
-        <div>💻 Ejecución de comandos shell</div>
-        <div>📁 Acceso al sistema de archivos</div>
+        <div>🤖 Agente autonomo con loop agentic</div>
+        <div>⚡ Ejecucion de codigo (Python, JS, Bash)</div>
+        <div>💻 Comandos shell completos</div>
+        <div>📁 Sistema de archivos completo</div>
+        <div>🔧 13 herramientas disponibles</div>
+        <div>🧠 Razonamiento visible paso a paso</div>
         <div>🌐 Soporte de proxy para Cuba</div>
-        <div>⚡ Streaming en tiempo real</div>
-        <div>🔧 Tool use (shell, files, web)</div>
-        <div>🎨 Interfaz Fluent Design</div>
         <div>📱 Compatible 32/64 bits</div>
       </div>
       

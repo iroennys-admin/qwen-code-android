@@ -250,7 +250,6 @@ public class ZAIWebViewPlugin extends Plugin {
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(false);
         settings.setSaveFormData(true);
-        settings.setMediaDefaultPlaybackRequiresUserGesture(false);
 
         // Realistic User-Agent matching current Chrome on Android
         settings.setUserAgentString(

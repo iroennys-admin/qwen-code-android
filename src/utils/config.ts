@@ -4,13 +4,15 @@ const CUBA_PROXY_BASE = 'https://nvidia.aiql.com';
 import type { AppConfig, Provider, ModelInfo } from '../types';
 
 const NVIDIA_MODELS: ModelInfo[] = [
+  { id: 'z-ai/glm-5.1', name: 'GLM-5.1 (Flagship)', contextLength: 203000 },
+  { id: 'z-ai/glm5', name: 'GLM-5', contextLength: 200000 },
   { id: 'nvidia/nemotron-3-super-120b-a12b', name: 'Nemotron 3 Super 120B', contextLength: 131072 },
-  { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B', contextLength: 131072 },
+  { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1', name: 'Nemotron Ultra 253B', contextLength: 131072 },
+  { id: 'qwen/qwen3.5-397b-a17b', name: 'Qwen 3.5 397B', contextLength: 131072 },
+  { id: 'qwen/qwen3-coder-480b-a35b-instruct', name: 'Qwen3 Coder 480B', contextLength: 131072 },
+  { id: 'deepseek-ai/deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextLength: 131072 },
+  { id: 'meta/llama-4-maverick-17b-128e-instruct', name: 'Llama 4 Maverick', contextLength: 131072 },
   { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', name: 'Nemotron Super 49B', contextLength: 131072 },
-  { id: 'nvidia/deepseek-llm-r1', name: 'DeepSeek R1', contextLength: 131072 },
-  { id: 'nvidia/qwen2.5-72b-instruct', name: 'Qwen 2.5 72B', contextLength: 131072 },
-  { id: 'nvidia/mistral-large-2411', name: 'Mistral Large', contextLength: 131072 },
-  { id: 'nvidia/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', contextLength: 131072 },
 ];
 
 const OPENROUTER_MODELS: ModelInfo[] = [
@@ -57,30 +59,21 @@ const MODAL_MODELS: ModelInfo[] = [
 
 export const DEFAULT_PROVIDERS: Provider[] = [
   {
-    id: 'zai',
-    name: 'Z.ai (GLM)',
-    baseUrl: 'https://api.z.ai/api/paas/v4',
-    proxyBaseUrl: 'https://zai.aiql.com/v1',
-    apiKey: '',
-    models: ZAI_MODELS,
-    enabled: true,
-  },
-  {
-    id: 'modal',
-    name: 'Modal (Free GLM-5.1)',
-    baseUrl: 'https://modal.com/glm-5-endpoint/v1',
-    proxyBaseUrl: 'https://modal.aiql.com/v1',
-    apiKey: '',
-    models: MODAL_MODELS,
-    enabled: true,
-  },
-  {
     id: 'nvidia',
-    name: 'NVIDIA NIM',
+    name: 'NVIDIA NIM (GLM-5.1 FREE)',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     proxyBaseUrl: 'https://nvidia.aiql.com/v1',
     apiKey: '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',
     models: NVIDIA_MODELS,
+    enabled: true,
+  },
+  {
+    id: 'zai',
+    name: 'Z.ai (GLM API)',
+    baseUrl: 'https://api.z.ai/api/paas/v4',
+    proxyBaseUrl: 'https://zai.aiql.com/v1',
+    apiKey: '23296a27f5804820a1f9256e8c2ebc41.103euTSJeqU5Vni3',
+    models: ZAI_MODELS,
     enabled: true,
   },
   {
@@ -250,9 +243,9 @@ The user communicates in Spanish. Respond in Spanish but write code, file names,
 
 export const DEFAULT_CONFIG: AppConfig = {
   providers: DEFAULT_PROVIDERS,
-  activeProvider: 'zai',
-  activeModel: 'glm-5.1',
-  proxyEnabled: false,
+  activeProvider: 'nvidia',
+  activeModel: 'z-ai/glm-5.1',
+  proxyEnabled: true,
   proxyBaseUrl: CUBA_PROXY_BASE,
   streaming: true,
   temperature: 0.7,

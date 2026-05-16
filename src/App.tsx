@@ -9,6 +9,7 @@ import TerminalView from './components/TerminalView';
 import FileExplorer from './components/FileExplorer';
 import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
+import ZAIBrowser from './components/ZAIBrowser';
 
 const CONFIG_VERSION = 4;
 
@@ -457,6 +458,9 @@ export default function App() {
                 agentState={agentState}
               />
             )
+          )}
+          {view === 'zai' && (
+            <ZAIBrowser config={config} updateConfig={updateConfig} />
           )}
           {view === 'terminal' && (
             <TerminalView config={config} />

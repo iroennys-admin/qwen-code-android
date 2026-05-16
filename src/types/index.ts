@@ -132,7 +132,7 @@ export interface ApiToolCall {
   };
 }
 
-export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings';
+export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings' | 'zai';
 
 /** Agent run state for UI feedback */
 export interface AgentState {

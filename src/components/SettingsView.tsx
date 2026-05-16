@@ -515,7 +515,7 @@ function AboutTab() {
       </div>
       
       <h2 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700 }}>Qwen Code</h2>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v3.0.0 — Full Device Control</p>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v3.1.0 — Z.ai Browser + Full Device Control</p>
       
       <div style={{
         background: 'var(--bg-card)',

@@ -72,6 +72,9 @@ declare global {
       // Device
       getDeviceInfo: () => Promise<any>;
       showToast: (message: string) => Promise<{ value: boolean }>;
+      // Z.ai WebView Browser
+      openWebView: (url: string) => Promise<{ value: boolean; error?: string }>;
+      closeWebView: () => Promise<{ value: boolean }>;
     };
     AndroidBridge?: any;
   }

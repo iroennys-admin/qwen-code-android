@@ -36,10 +36,14 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
 
   // Open native WebView via Capacitor plugin
   const openNativeWebView = useCallback((url: string) => {
-    if (ZAIWebView) {
-      ZAIWebView.openWebView({ url });
-    } else if (window.QwenCodeBridge?.openWebView) {
-      window.QwenCodeBridge.openWebView(url);
+    try {
+      if (ZAIWebView) {
+        ZAIWebView.openWebView({ url });
+      } else if (window.QwenCodeBridge?.openWebView) {
+        window.QwenCodeBridge.openWebView(url);
+      }
+    } catch (e) {
+      console.error('Failed to open native WebView:', e);
     }
   }, []);
 
@@ -52,34 +56,44 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
     setBookmarkOpen(false);
 
     // If native, use the native WebView
-    if (isNative() && (ZAIWebView || window.QwenCodeBridge?.openWebView)) {
+    if (isNative()) {
       openNativeWebView(url);
       setUseNative(true);
     }
   }, [openNativeWebView]);
 
-  // Refresh current page
-  const refresh = useCallback(() => {
-    if (useNative && window.QwenCodeBridge?.openWebView) {
-      window.QwenCodeBridge.openWebView(browserUrl);
-    } else if (iframeRef.current) {
-      setIsLoading(true);
-      iframeRef.current.src = browserUrl;
-    }
-  }, [browserUrl, useNative]);
-
-  // Go back in browser history
-  const goBack = useCallback(() => {
-    if (useNative && (ZAIWebView || window.QwenCodeBridge?.closeWebView)) {
+  // Close the native WebView and return to the welcome screen
+  const closeNativeView = useCallback(() => {
+    try {
       if (ZAIWebView) {
         ZAIWebView.closeWebView();
       } else if (window.QwenCodeBridge?.closeWebView) {
         window.QwenCodeBridge.closeWebView();
       }
-      setUseNative(false);
-      setShowWebView(false);
+    } catch (e) {
+      console.error('Failed to close native WebView:', e);
     }
-  }, [useNative]);
+    setUseNative(false);
+    setShowWebView(false);
+  }, []);
+
+  // Refresh current page
+  const refresh = useCallback(() => {
+    if (useNative) {
+      // Re-open the WebView with same URL to refresh
+      openNativeWebView(browserUrl);
+    } else if (iframeRef.current) {
+      setIsLoading(true);
+      iframeRef.current.src = browserUrl;
+    }
+  }, [browserUrl, useNative, openNativeWebView]);
+
+  // Go back in browser history
+  const goBack = useCallback(() => {
+    if (useNative) {
+      closeNativeView();
+    }
+  }, [useNative, closeNativeView]);
 
   // Handle URL submit
   const handleUrlSubmit = useCallback((e: React.FormEvent) => {
@@ -114,12 +128,12 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
         // Clipboard read failed
       }
     }
-    alert('No se encontró API key en el portapapeles. Copia tu API key desde Z.ai y presiona este botón.');
+    alert('No se encontro API key en el portapapeles. Copia tu API key desde Z.ai y presiona este boton.');
   }, [config, updateConfig]);
 
-  // Check if native webview is available
+  // Check if native webview is available on mount
   useEffect(() => {
-    if (isNative() && (ZAIWebView || window.QwenCodeBridge?.openWebView)) {
+    if (isNative()) {
       setUseNative(true);
     }
   }, []);
@@ -140,23 +154,23 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
         borderBottom: '1px solid var(--border-primary)',
         zIndex: 10,
       }}>
-        {/* Back button */}
+        {/* Back/Close button */}
         <button
           onClick={goBack}
           title="Volver"
           style={{
             background: 'none',
             border: 'none',
-            color: useNative ? 'var(--text-primary)' : 'var(--text-tertiary)',
-            cursor: useNative ? 'pointer' : 'default',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
             padding: '6px',
             borderRadius: 'var(--radius-sm)',
-            fontSize: 18,
+            fontSize: 16,
             display: 'flex',
             alignItems: 'center',
           }}
         >
-          ←
+          {useNative ? 'X' : '<'}
         </button>
 
         {/* Refresh button */}
@@ -170,12 +184,12 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
             cursor: 'pointer',
             padding: '6px',
             borderRadius: 'var(--radius-sm)',
-            fontSize: 16,
+            fontSize: 14,
             display: 'flex',
             alignItems: 'center',
           }}
         >
-          ↻
+          R
         </button>
 
         {/* URL Bar */}
@@ -210,13 +224,13 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
             cursor: 'pointer',
             padding: '6px',
             borderRadius: 'var(--radius-sm)',
-            fontSize: 18,
+            fontSize: 14,
             display: 'flex',
             alignItems: 'center',
             position: 'relative',
           }}
         >
-          ★
+          *
         </button>
 
         {/* Extract API Key button */}
@@ -235,7 +249,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
             whiteSpace: 'nowrap',
           }}
         >
-          🔑 Key
+          Key
         </button>
       </div>
 
@@ -295,7 +309,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
 
       {/* Content Area */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Native WebView mode - show status */}
+        {/* Native WebView mode - show status and controls */}
         {useNative && showWebView && (
           <div style={{
             height: '100%',
@@ -317,14 +331,14 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
               fontSize: 36,
               boxShadow: '0 0 40px rgba(74, 144, 217, 0.3)',
             }}>
-              🌐
+              Z
             </div>
             <div style={{ textAlign: 'center' }}>
               <h2 style={{ color: 'var(--text-primary)', fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
                 Z.ai abierto en navegador
               </h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 300, lineHeight: 1.5 }}>
-                Z.ai se abrio en el navegador nativo de tu dispositivo. Ahi puedes logearte y usar GLM-5.1 directamente.
+                Z.ai se abrio en el WebView nativo. Puedes logearte, chatear con GLM-5.1 y gestionar tu cuenta directamente.
               </p>
             </div>
 
@@ -354,7 +368,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                   gap: 'var(--space-sm)',
                 }}
               >
-                🤖 Abrir Z.ai Chat
+                Abrir Z.ai Chat
               </button>
               <button
                 onClick={() => openNativeWebView(ZAI_LOGIN_URL)}
@@ -374,7 +388,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                   gap: 'var(--space-sm)',
                 }}
               >
-                🔑 Iniciar Sesion
+                Iniciar Sesion
               </button>
               <button
                 onClick={() => openNativeWebView(ZAI_API_KEYS_URL)}
@@ -394,7 +408,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                   gap: 'var(--space-sm)',
                 }}
               >
-                🔐 Obtener API Key
+                Obtener API Key
               </button>
               <button
                 onClick={extractApiKey}
@@ -414,7 +428,27 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                   gap: 'var(--space-sm)',
                 }}
               >
-                📋 Guardar API Key del Portapapeles
+                Guardar API Key del Portapapeles
+              </button>
+              <button
+                onClick={closeNativeView}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'rgba(248, 113, 113, 0.1)',
+                  border: '1px solid rgba(248, 113, 113, 0.3)',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#f87171',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 'var(--space-sm)',
+                }}
+              >
+                Cerrar Navegador
               </button>
             </div>
 
@@ -498,6 +532,8 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: 48,
+              fontWeight: 700,
+              color: 'white',
               boxShadow: '0 0 60px rgba(74, 144, 217, 0.3)',
             }}>
               Z
@@ -568,7 +604,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                 gap: 'var(--space-sm)',
               }}
             >
-              🤖 Abrir Z.ai Chat
+              Abrir Z.ai Chat
             </button>
 
             {/* Features info */}
@@ -584,12 +620,12 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                 Que puedes hacer aqui:
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 2 }}>
-                <div>🤖 Chatear con GLM-5.1 gratis</div>
-                <div>🔑 Iniciar sesion en tu cuenta Z.ai</div>
-                <div>🔐 Crear y gestionar API Keys</div>
-                <div>📋 Copiar API Key y guardarla en la app</div>
-                <div>📊 Ver tu uso y saldo de tokens</div>
-                <div>⚙️ Configurar modelos y ajustes</div>
+                <div>Chatear con GLM-5.1 gratis</div>
+                <div>Iniciar sesion en tu cuenta Z.ai</div>
+                <div>Crear y gestionar API Keys</div>
+                <div>Copiar API Key y guardarla en la app</div>
+                <div>Ver tu uso y saldo de tokens</div>
+                <div>Configurar modelos y ajustes</div>
               </div>
             </div>
 

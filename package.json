@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "cap:init": "npx cap init 'Qwen Code' com.qwen.code.android --web-dir dist",
     "cap:add": "npx cap add android",
@@ -17,18 +17,21 @@
     "type": "git",
     "url": "git+https://github.com/iroennys-admin/qwen-code-android.git"
   },
-  "keywords": ["qwen", "ai", "android", "code-agent"],
+  "keywords": [
+    "qwen",
+    "ai",
+    "android",
+    "code-agent"
+  ],
   "author": "iroennys-admin",
   "license": "MIT",
   "dependencies": {
-    "@capacitor-community/http": "^1.4.1",
     "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/keyboard": "^8.0.3",
     "@capacitor/preferences": "^8.0.1",
-    "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

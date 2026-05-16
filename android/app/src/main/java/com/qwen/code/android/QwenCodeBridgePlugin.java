@@ -133,45 +133,38 @@ public class QwenCodeBridgePlugin extends Plugin {
     
     private void requestPermissionForAliases(String[] aliases) {
         try {
-            // Use Capacitor's built-in permission request
-            for (String alias : aliases) {
-                requestPermission(alias, null);
+            // Use direct Android permission request
+            ArrayList<String> perms = new ArrayList<>();
+            if (contains(aliases, "storage")) {
+                perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+                perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
             }
-        } catch (Exception e) {
-            // Fallback: request directly
-            try {
-                ArrayList<String> perms = new ArrayList<>();
-                if (contains(aliases, "storage")) {
-                    perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
-                    perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-                }
-                if (contains(aliases, "media")) {
-                    perms.add(Manifest.permission.READ_MEDIA_IMAGES);
-                    perms.add(Manifest.permission.READ_MEDIA_VIDEO);
-                    perms.add(Manifest.permission.READ_MEDIA_AUDIO);
-                }
-                if (contains(aliases, "sms")) {
-                    perms.add(Manifest.permission.SEND_SMS);
-                    perms.add(Manifest.permission.READ_SMS);
-                }
-                if (contains(aliases, "phone")) {
-                    perms.add(Manifest.permission.CALL_PHONE);
-                    perms.add(Manifest.permission.READ_CALL_LOG);
-                    perms.add(Manifest.permission.READ_PHONE_STATE);
-                }
-                if (contains(aliases, "contacts")) {
-                    perms.add(Manifest.permission.READ_CONTACTS);
-                    perms.add(Manifest.permission.WRITE_CONTACTS);
-                }
-                if (contains(aliases, "notifications") && Build.VERSION.SDK_INT >= 33) {
-                    perms.add("android.permission.POST_NOTIFICATIONS");
-                }
-                if (!perms.isEmpty()) {
-                    getActivity().requestPermissions(perms.toArray(new String[0]), 200);
-                }
-            } catch (Exception ex) {
-                Log.e(TAG, "Fallback permission request failed: " + ex.getMessage());
+            if (contains(aliases, "media")) {
+                perms.add(Manifest.permission.READ_MEDIA_IMAGES);
+                perms.add(Manifest.permission.READ_MEDIA_VIDEO);
+                perms.add(Manifest.permission.READ_MEDIA_AUDIO);
             }
+            if (contains(aliases, "sms")) {
+                perms.add(Manifest.permission.SEND_SMS);
+                perms.add(Manifest.permission.READ_SMS);
+            }
+            if (contains(aliases, "phone")) {
+                perms.add(Manifest.permission.CALL_PHONE);
+                perms.add(Manifest.permission.READ_CALL_LOG);
+                perms.add(Manifest.permission.READ_PHONE_STATE);
+            }
+            if (contains(aliases, "contacts")) {
+                perms.add(Manifest.permission.READ_CONTACTS);
+                perms.add(Manifest.permission.WRITE_CONTACTS);
+            }
+            if (contains(aliases, "notifications") && Build.VERSION.SDK_INT >= 33) {
+                perms.add("android.permission.POST_NOTIFICATIONS");
+            }
+            if (!perms.isEmpty()) {
+                getActivity().requestPermissions(perms.toArray(new String[0]), 200);
+            }
+        } catch (Exception ex) {
+            Log.e(TAG, "Permission request failed: " + ex.getMessage());
         }
     }
     

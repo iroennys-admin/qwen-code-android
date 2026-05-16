@@ -72,12 +72,13 @@ public class QwenNotificationListener extends NotificationListenerService {
     }
 
     /**
-     * Get all active notifications
+     * Get all active notifications as JSArray
+     * Named differently from parent method to avoid override conflict
      */
-    public JSArray getActiveNotifications() {
+    public JSArray getAllNotificationsAsJSArray() {
         JSArray result = new JSArray();
         try {
-            StatusBarNotification[] notifications = getActiveStatusBarNotifications();
+            StatusBarNotification[] notifications = getActiveNotifications();
             if (notifications != null) {
                 for (StatusBarNotification sbn : notifications) {
                     try {
@@ -113,7 +114,7 @@ public class QwenNotificationListener extends NotificationListenerService {
      */
     public boolean dismissNotification(String key) {
         try {
-            StatusBarNotification[] notifications = getActiveStatusBarNotifications();
+            StatusBarNotification[] notifications = getActiveNotifications();
             if (notifications != null) {
                 for (StatusBarNotification sbn : notifications) {
                     if (sbn.getKey().equals(key)) {
@@ -140,7 +141,7 @@ public class QwenNotificationListener extends NotificationListenerService {
         }
     }
 
-    private JSObject parseNotification(StatusBarNotification sbn) {
+    private static JSObject parseNotification(StatusBarNotification sbn) {
         JSObject notif = new JSObject();
         notif.put("key", sbn.getKey());
         notif.put("packageName", sbn.getPackageName());

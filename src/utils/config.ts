@@ -1,4 +1,4 @@
-// Default configuration for the Qwen Code Android app
+// Default configuration for the Qwen Code Android app v3.0.0
 const CUBA_PROXY_BASE = 'https://nvidia.aiql.com';
 
 import type { AppConfig, Provider, ModelInfo } from '../types';
@@ -80,7 +80,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
   },
 ];
 
-const AGENT_SYSTEM_PROMPT = `You are Qwen Code, an advanced AI coding agent running on an Android device. You have FULL ACCESS to the entire device filesystem and can execute any command, create and edit any file, debug programs, search the web, and perform any task the user requests. You are essentially a developer with root-level shell access.
+const AGENT_SYSTEM_PROMPT = `You are Qwen Code v3.0, an advanced AI agent running on an Android device with FULL DEVICE CONTROL. You can execute commands, read/write any file, send messages, make calls, control other apps, read the screen, automate UI interactions, and perform ANY task the user requests. You are essentially the user's personal assistant with complete access to their phone.
 
 ## Core Principle: AUTONOMOUS EXECUTION
 You are an autonomous agent. When given a task:
@@ -92,45 +92,97 @@ You are an autonomous agent. When given a task:
 
 NEVER just describe how to do something - DO IT. Never stop after one step if more work is needed. Keep going until the task is truly complete.
 
-## Device Filesystem
-You have access to the FULL Android filesystem:
+## Device Access (Full Control)
+You have COMPLETE access to the Android device:
 - /sdcard/ - User storage (Downloads, Documents, Pictures, etc.)
 - /storage/ - External storage
-- /data/data/com.qwen.code.android/ - App private storage
-- /tmp/ - Temporary files
+- /data/ - App data (where accessible)
+- /system/ - System files (read-only without root)
 - All directories the user has permissions for
 
 IMPORTANT: Use /sdcard/ as the default home directory, NOT /home/user.
 
-## Available Tools (16 total)
+## Available Tools (28 total)
 
 ### Code Execution
-- **code_execute**: Execute code in Python, JavaScript, Node.js, Bash, Ruby, or Perl. The code is written to a temp file and executed.
-- **npx_install**: Run any npx package instantly (auto-installs and executes). Use for tools like create-react-app, degit, typescript, etc.
+- **code_execute**: Execute code in Python, JavaScript, Node.js, Bash, Ruby, or Perl
+- **npx_install**: Run any npx package instantly (auto-installs and executes)
 
 ### Shell & System
 - **shell**: Execute any shell command on the device. Full shell access.
-- **list_dir**: List directory contents with file details (permissions, size, date)
+- **list_dir**: List directory contents with file details
+- **get_device_info**: Get device info (manufacturer, model, Android version, storage, root status)
+- **show_toast**: Show a brief toast message on screen
 
 ### File Operations (full access)
-- **file_read**: Read file contents (supports line ranges with start_line/end_line)
+- **file_read**: Read file contents (supports line ranges)
 - **file_write**: Create or overwrite a file with content. Creates parent directories automatically.
 - **file_edit**: Edit a file by replacing specific text (supports replace_all)
 - **mkdir**: Create directories (including parent directories)
 - **rm**: Delete files or directories (supports recursive)
 - **mv**: Move/rename files or directories
-- **cp**: Copy files or directories (supports recursive)
+- **cp**: Copy files or directories
 
-### Web & Internet
-- **web_search**: Search the web using DuckDuckGo. Returns titles, URLs, and snippets.
+### Web & Internet (Fixed - works from Cuba)
+- **web_search**: Search the web using DuckDuckGo or Google. Returns titles, URLs, and snippets.
 - **web_scrape**: Scrape a webpage and extract clean text content and links.
 - **web_fetch**: Fetch raw content from a URL. Returns HTML or text.
 
 ### Search
-- **glob**: Find files matching a pattern (e.g., "**/*.py", "src/**/*.ts")
+- **glob**: Find files matching a pattern (e.g., "**/*.py")
 - **grep**: Search for text patterns in files (supports include filter)
 
+### SMS & Messaging
+- **send_sms**: Send an SMS message to any phone number. Requires SMS permission.
+- **read_sms**: Read recent SMS messages. Can filter by phone number.
+
+### WhatsApp
+- **send_whatsapp**: Open WhatsApp with a message for a specific number, or share text via WhatsApp. User must press Send in WhatsApp. Use phone_number with country code (e.g., "5355555555" for Cuba).
+
+### Phone & Calls
+- **make_call**: Make a phone call to any number. Requires CALL_PHONE permission.
+- **read_call_log**: Read recent call log entries (incoming, outgoing, missed).
+
+### Contacts
+- **read_contacts**: Read device contacts. Can search by name. Returns name and phone numbers.
+
+### App Control
+- **launch_app**: Launch any app by package name (e.g., "com.whatsapp", "com.android.chrome")
+- **list_apps**: List all user-installed apps on the device
+
+### UI Automation (Accessibility Service)
+IMPORTANT: The Accessibility Service must be enabled first in Settings > Accessibility > Qwen Code.
+- **read_screen**: Read all visible text on the current screen. Returns current app and all text elements.
+- **click_text**: Click on a UI element by its text content. Use exact_match for precise matching.
+- **click_at**: Click at specific screen coordinates (x, y)
+- **type_text**: Type text into the currently focused input field
+- **swipe**: Perform a swipe gesture from one point to another
+- **press_back**: Press the Android back button
+- **press_home**: Press the Android home button
+
+### Notifications
+- **read_notifications**: Read all active device notifications. Requires notification access permission.
+- **dismiss_notification**: Dismiss a specific notification by its key
+
+### Clipboard
+- **clipboard_read**: Read text from the clipboard
+- **clipboard_write**: Copy text to the clipboard
+
 ## How to Work
+
+### When Sending WhatsApp Messages:
+1. Use send_whatsapp with the phone number (with country code, no +) and message
+2. WhatsApp will open with the message pre-filled
+3. If you have Accessibility Service enabled, you can then use click_text to press "Send"
+4. Example: send_whatsapp phone_number="5355555555" message="Hola, como estas?"
+5. Then: click_text text="Enviar" to auto-press send
+
+### When Automating Apps:
+1. Launch the app with launch_app (e.g., launch_app package_name="com.whatsapp")
+2. Read the screen with read_screen to see what's on display
+3. Interact using click_text, click_at, type_text, swipe
+4. Navigate with press_back and press_home
+5. Read the screen again to verify actions
 
 ### When Writing Code:
 1. Write code to a file using file_write (use /sdcard/ as base directory)
@@ -139,30 +191,14 @@ IMPORTANT: Use /sdcard/ as the default home directory, NOT /home/user.
 4. If errors, read the file, edit it, and try again
 5. Iterate until the code works correctly
 
-### When Debugging:
-1. Read the error message carefully
-2. Use file_read to examine the relevant code
-3. Identify the issue and fix it with file_edit
-4. Re-run the code to verify the fix
-5. If the fix does not work, try a different approach
-
 ### When Searching the Web:
-1. Use web_search to find information (works from Cuba via DuckDuckGo)
+1. Use web_search to find information
 2. Use web_scrape to get detailed content from a specific page
 3. Use web_fetch for raw HTML/API responses
-4. IMPORTANT: web_search and web_scrape use native HTTP (bypasses CORS), so they always work
 
 ### When Using NPX Skills:
-- Use npx_install to run any npm package instantly without installing it globally
+- Use npx_install to run any npm package instantly
 - Examples: npx_install with package="create-react-app" and args="my-app"
-- This auto-installs and runs the package in one step
-
-### When Creating Projects:
-1. Plan the file structure
-2. Create directories with mkdir (use /sdcard/projects/)
-3. Write each file with file_write
-4. Test the project by running it
-5. Fix any issues iteratively
 
 ## Important Guidelines
 - Always explain what you are doing in Spanish before each step
@@ -174,6 +210,8 @@ IMPORTANT: Use /sdcard/ as the default home directory, NOT /home/user.
 - If unsure about something, check it rather than guessing
 - Keep iterating until the task is truly complete
 - DO IT, do not just describe how to do it
+- For WhatsApp automation, always check if Accessibility is available first
+- If a permission is missing, tell the user exactly how to enable it in Settings
 
 ## Language
 The user communicates in Spanish. Respond in Spanish but write code, file names, and technical terms in English as appropriate. Always explain your actions in Spanish.`;
@@ -197,11 +235,12 @@ export const DEFAULT_CONFIG: AppConfig = {
 };
 
 export const TOOL_DEFINITIONS = [
+  // Shell & Code
   {
     type: 'function' as const,
     function: {
       name: 'shell',
-      description: 'Execute a shell command on the device. Returns stdout, stderr, and exit code. Use for any system command, package management, git, pip, npm, etc.',
+      description: 'Execute a shell command on the device. Returns stdout, stderr, and exit code.',
       parameters: {
         type: 'object',
         properties: {
@@ -216,7 +255,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'code_execute',
-      description: 'Execute code in a programming language. The code is written to a temporary file and executed. Use this to run Python, JavaScript, or other code. Returns the output and any errors.',
+      description: 'Execute code in a programming language. The code is written to a temporary file and executed.',
       parameters: {
         type: 'object',
         properties: {
@@ -232,11 +271,11 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'npx_install',
-      description: 'Run any npx package instantly. Auto-installs and executes the package. Use for tools like create-react-app, degit, typescript compiler, etc. Example: npx_install with package="create-react-app" args="my-app"',
+      description: 'Run any npx package instantly. Auto-installs and executes the package. Use for tools like create-react-app, degit, typescript compiler, etc.',
       parameters: {
         type: 'object',
         properties: {
-          package: { type: 'string', description: 'The npm package to run with npx (e.g., "create-react-app", "typescript", "prettier")' },
+          package: { type: 'string', description: 'The npm package to run with npx' },
           args: { type: 'string', description: 'Arguments to pass to the package' },
           timeout: { type: 'number', description: 'Timeout in seconds (default: 120)' },
         },
@@ -244,15 +283,16 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  // File Operations
   {
     type: 'function' as const,
     function: {
       name: 'file_read',
-      description: 'Read the contents of a file. Supports line ranges for large files. Has access to the full device filesystem.',
+      description: 'Read the contents of a file. Supports line ranges. Has access to the full device filesystem.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path to the file to read (e.g., "/sdcard/Documents/code.py")' },
+          path: { type: 'string', description: 'Path to the file to read' },
           start_line: { type: 'number', description: 'Start line number (1-based)' },
           end_line: { type: 'number', description: 'End line number' },
         },
@@ -264,11 +304,11 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'file_write',
-      description: 'Write content to a file (creates or overwrites). Creates parent directories automatically. Has access to the full device filesystem.',
+      description: 'Write content to a file (creates or overwrites). Creates parent directories automatically.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path to the file to write (e.g., "/sdcard/projects/hello.py")' },
+          path: { type: 'string', description: 'Path to the file to write' },
           content: { type: 'string', description: 'Content to write' },
         },
         required: ['path', 'content'],
@@ -344,7 +384,6 @@ export const TOOL_DEFINITIONS = [
         properties: {
           source: { type: 'string', description: 'Source path' },
           destination: { type: 'string', description: 'Destination path' },
-          recursive: { type: 'boolean', description: 'Copy recursively' },
         },
         required: ['source', 'destination'],
       },
@@ -354,7 +393,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'list_dir',
-      description: 'List directory contents with file details (permissions, size, date). Lists the full filesystem.',
+      description: 'List directory contents with file details. Lists the full filesystem.',
       parameters: {
         type: 'object',
         properties: {
@@ -365,11 +404,12 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  // Web
   {
     type: 'function' as const,
     function: {
       name: 'web_search',
-      description: 'Search the web using DuckDuckGo. Returns search results with titles, URLs, and snippets. Works from Cuba. Use this when you need to find information online.',
+      description: 'Search the web using DuckDuckGo or Google. Returns search results with titles, URLs, and snippets.',
       parameters: {
         type: 'object',
         properties: {
@@ -384,7 +424,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'web_scrape',
-      description: 'Scrape a webpage and extract clean text content. Returns the page title, text content, and links. Works from Cuba. Use this when you need detailed content from a specific URL.',
+      description: 'Scrape a webpage and extract clean text content. Returns page title, text content, and links.',
       parameters: {
         type: 'object',
         properties: {
@@ -399,7 +439,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'web_fetch',
-      description: 'Fetch raw content from a URL. Returns HTML or text. Works from Cuba via native HTTP. Use for API calls, raw HTML, or when you need the exact response.',
+      description: 'Fetch raw content from a URL. Returns HTML or text. Use for API calls or raw content.',
       parameters: {
         type: 'object',
         properties: { url: { type: 'string', description: 'URL to fetch' } },
@@ -407,6 +447,7 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  // Search
   {
     type: 'function' as const,
     function: {
@@ -435,6 +476,293 @@ export const TOOL_DEFINITIONS = [
           include: { type: 'string', description: 'File pattern to include (e.g., "*.py")' },
         },
         required: ['pattern'],
+      },
+    },
+  },
+  // SMS
+  {
+    type: 'function' as const,
+    function: {
+      name: 'send_sms',
+      description: 'Send an SMS message to a phone number. Requires SMS permission.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone_number: { type: 'string', description: 'Phone number to send SMS to' },
+          message: { type: 'string', description: 'SMS message content' },
+        },
+        required: ['phone_number', 'message'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'read_sms',
+      description: 'Read recent SMS messages. Can filter by phone number.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Number of messages to read (default: 20)' },
+          phone_number: { type: 'string', description: 'Filter by phone number' },
+        },
+        required: [],
+      },
+    },
+  },
+  // WhatsApp
+  {
+    type: 'function' as const,
+    function: {
+      name: 'send_whatsapp',
+      description: 'Open WhatsApp with a message for a specific number. User must press Send in WhatsApp. With Accessibility enabled, can auto-press send. Phone number should include country code without + (e.g., "5355555555" for Cuba).',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone_number: { type: 'string', description: 'Phone number with country code (no +). e.g., "5355555555"' },
+          message: { type: 'string', description: 'Message to send' },
+        },
+        required: ['message'],
+      },
+    },
+  },
+  // Phone
+  {
+    type: 'function' as const,
+    function: {
+      name: 'make_call',
+      description: 'Make a phone call to a number. Requires CALL_PHONE permission.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone_number: { type: 'string', description: 'Phone number to call' },
+        },
+        required: ['phone_number'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'read_call_log',
+      description: 'Read recent call log entries (incoming, outgoing, missed).',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Number of entries (default: 20)' },
+        },
+        required: [],
+      },
+    },
+  },
+  // Contacts
+  {
+    type: 'function' as const,
+    function: {
+      name: 'read_contacts',
+      description: 'Read device contacts. Can search by name. Returns name and phone numbers.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Number of contacts (default: 50)' },
+          search: { type: 'string', description: 'Search by name' },
+        },
+        required: [],
+      },
+    },
+  },
+  // Apps
+  {
+    type: 'function' as const,
+    function: {
+      name: 'launch_app',
+      description: 'Launch an app by package name (e.g., "com.whatsapp", "com.android.chrome", "com.telegram.messenger")',
+      parameters: {
+        type: 'object',
+        properties: {
+          package_name: { type: 'string', description: 'App package name (e.g., "com.whatsapp")' },
+          action: { type: 'string', description: 'Intent action (optional)' },
+          data: { type: 'string', description: 'Intent data URI (optional)' },
+        },
+        required: ['package_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'list_apps',
+      description: 'List all user-installed apps on the device.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  // Accessibility / UI Automation
+  {
+    type: 'function' as const,
+    function: {
+      name: 'read_screen',
+      description: 'Read all visible text on the current screen. Returns current app package name and all text elements. Requires Accessibility Service enabled.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'click_text',
+      description: 'Click on a UI element by its text content. Requires Accessibility Service enabled.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text of the element to click' },
+          exact_match: { type: 'boolean', description: 'Require exact text match (default: false)' },
+        },
+        required: ['text'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'click_at',
+      description: 'Click at specific screen coordinates. Requires Accessibility Service enabled.',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number', description: 'X coordinate' },
+          y: { type: 'number', description: 'Y coordinate' },
+        },
+        required: ['x', 'y'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'type_text',
+      description: 'Type text into the currently focused input field. Requires Accessibility Service enabled.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text to type' },
+        },
+        required: ['text'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'swipe',
+      description: 'Perform a swipe gesture. Requires Accessibility Service enabled.',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_x: { type: 'number', description: 'Start X coordinate' },
+          start_y: { type: 'number', description: 'Start Y coordinate' },
+          end_x: { type: 'number', description: 'End X coordinate' },
+          end_y: { type: 'number', description: 'End Y coordinate' },
+          duration: { type: 'number', description: 'Duration in ms (default: 300)' },
+        },
+        required: ['start_x', 'start_y', 'end_x', 'end_y'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'press_back',
+      description: 'Press the Android back button. Requires Accessibility Service enabled.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'press_home',
+      description: 'Press the Android home button. Requires Accessibility Service enabled.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  // Notifications
+  {
+    type: 'function' as const,
+    function: {
+      name: 'read_notifications',
+      description: 'Read all active device notifications. Requires notification access permission.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Number of notifications (default: 20)' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'dismiss_notification',
+      description: 'Dismiss a notification by its key.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'Notification key from read_notifications' },
+        },
+        required: ['key'],
+      },
+    },
+  },
+  // Clipboard
+  {
+    type: 'function' as const,
+    function: {
+      name: 'clipboard_read',
+      description: 'Read text from the clipboard.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'clipboard_write',
+      description: 'Copy text to the clipboard.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text to copy to clipboard' },
+        },
+        required: ['text'],
+      },
+    },
+  },
+  // Device Info
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_device_info',
+      description: 'Get device information (manufacturer, model, Android version, storage, root status).',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'show_toast',
+      description: 'Show a brief toast message on the device screen.',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', description: 'Toast message to display' },
+        },
+        required: ['message'],
       },
     },
   },

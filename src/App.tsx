@@ -10,7 +10,7 @@ import FileExplorer from './components/FileExplorer';
 import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
 
-const CONFIG_VERSION = 3;
+const CONFIG_VERSION = 4;
 
 function loadConfig(): AppConfig {
   try {

@@ -1,7 +1,7 @@
 {
   "name": "qwen-code-android",
-  "version": "1.0.0",
-  "description": "Qwen Code AI Agent for Android - Fluent Design UI, Multi-provider API, Shell Execution",
+  "version": "3.0.0",
+  "description": "Qwen Code AI Agent for Android v3 - Full Device Control, WhatsApp, SMS, Calls, UI Automation, Fluent Design",
   "type": "module",
   "scripts": {
     "dev": "vite",

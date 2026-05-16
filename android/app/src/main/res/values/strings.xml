@@ -4,4 +4,5 @@
     <string name="title_activity_main">Qwen Code</string>
     <string name="package_name">com.qwen.code.android</string>
     <string name="custom_url_scheme">com.qwen.code.android</string>
+    <string name="accessibility_service_description">Qwen Code Accessibility Service permite al agente de IA leer la pantalla, hacer clic en elementos, escribir texto y automatizar interacciones con cualquier aplicación en tu dispositivo. Esto es necesario para que el agente pueda controlar tu teléfono y realizar tareas como enviar mensajes de WhatsApp, interactuar con apps, y más.</string>
 </resources>

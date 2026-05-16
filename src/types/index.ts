@@ -42,7 +42,21 @@ export interface ToolCall {
   duration?: number;
 }
 
-export type ToolType = 'shell' | 'file_read' | 'file_write' | 'file_edit' | 'web_fetch' | 'web_search' | 'web_scrape' | 'glob' | 'grep' | 'code_execute' | 'mkdir' | 'rm' | 'mv' | 'cp' | 'list_dir' | 'npx_install';
+export type ToolType = 
+  | 'shell' | 'file_read' | 'file_write' | 'file_edit' 
+  | 'web_fetch' | 'web_search' | 'web_scrape' 
+  | 'glob' | 'grep' | 'code_execute' 
+  | 'mkdir' | 'rm' | 'mv' | 'cp' | 'list_dir' 
+  | 'npx_install'
+  | 'send_sms' | 'read_sms' 
+  | 'send_whatsapp' 
+  | 'make_call' | 'read_call_log'
+  | 'read_contacts'
+  | 'launch_app' | 'list_apps'
+  | 'read_screen' | 'click_text' | 'click_at' | 'type_text' | 'swipe' | 'press_back' | 'press_home'
+  | 'read_notifications' | 'dismiss_notification'
+  | 'clipboard_read' | 'clipboard_write'
+  | 'get_device_info' | 'show_toast';
 
 export interface ToolResult {
   toolCallId: string;

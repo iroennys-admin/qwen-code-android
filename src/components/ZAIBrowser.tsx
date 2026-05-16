@@ -21,10 +21,9 @@ const ZAI_API_KEYS_URL = 'https://open.bigmodel.cn/usercenter/apikeys';
 export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
   const [browserUrl, setBrowserUrl] = useState(ZAI_CHAT_URL);
   const [urlInput, setUrlInput] = useState(ZAI_CHAT_URL);
-  const [isLoading, setIsLoading] = useState(true);
   const [showWebView, setShowWebView] = useState(false);
-  const [useNative, setUseNative] = useState(false);
   const [bookmarkOpen, setBookmarkOpen] = useState(false);
+  const [opening, setOpening] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const bookmarks = [
@@ -34,66 +33,34 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
     { name: 'BigModel Console', url: ZAI_API_URL, icon: '📊', desc: 'Consola de BigModel' },
   ];
 
-  // Open native WebView via Capacitor plugin
-  const openNativeWebView = useCallback((url: string) => {
-    try {
-      if (ZAIWebView) {
-        ZAIWebView.openWebView({ url });
-      } else if (window.QwenCodeBridge?.openWebView) {
-        window.QwenCodeBridge.openWebView(url);
-      }
-    } catch (e) {
-      console.error('Failed to open native WebView:', e);
-    }
-  }, []);
-
-  // Navigate to URL
-  const navigateTo = useCallback((url: string) => {
+  // Open URL using the best available method:
+  // 1. Chrome Custom Tabs (default - uses real Chrome engine, most compatible)
+  // 2. Native WebView fallback (if Custom Tabs unavailable)
+  // 3. External browser (last resort)
+  const navigateTo = useCallback((url: string, mode: string = 'auto') => {
     setBrowserUrl(url);
     setUrlInput(url);
-    setIsLoading(true);
-    setShowWebView(true);
     setBookmarkOpen(false);
+    setOpening(true);
 
-    // If native, use the native WebView
     if (isNative()) {
-      openNativeWebView(url);
-      setUseNative(true);
-    }
-  }, [openNativeWebView]);
-
-  // Close the native WebView and return to the welcome screen
-  const closeNativeView = useCallback(() => {
-    try {
-      if (ZAIWebView) {
-        ZAIWebView.closeWebView();
-      } else if (window.QwenCodeBridge?.closeWebView) {
-        window.QwenCodeBridge.closeWebView();
+      try {
+        if (ZAIWebView) {
+          ZAIWebView.openWebView({ url, mode });
+        } else if (window.QwenCodeBridge?.openWebView) {
+          window.QwenCodeBridge.openWebView(url);
+        }
+      } catch (e) {
+        console.error('Failed to open browser:', e);
       }
-    } catch (e) {
-      console.error('Failed to close native WebView:', e);
+      // Don't show the internal view for native - the native overlay handles it
+      setShowWebView(true);
+      setTimeout(() => setOpening(false), 1000);
+    } else {
+      setShowWebView(true);
+      setOpening(false);
     }
-    setUseNative(false);
-    setShowWebView(false);
   }, []);
-
-  // Refresh current page
-  const refresh = useCallback(() => {
-    if (useNative) {
-      // Re-open the WebView with same URL to refresh
-      openNativeWebView(browserUrl);
-    } else if (iframeRef.current) {
-      setIsLoading(true);
-      iframeRef.current.src = browserUrl;
-    }
-  }, [browserUrl, useNative, openNativeWebView]);
-
-  // Go back in browser history
-  const goBack = useCallback(() => {
-    if (useNative) {
-      closeNativeView();
-    }
-  }, [useNative, closeNativeView]);
 
   // Handle URL submit
   const handleUrlSubmit = useCallback((e: React.FormEvent) => {
@@ -107,16 +74,13 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
 
   // Extract API key from Z.ai and save to config
   const extractApiKey = useCallback(async () => {
-    // Try to get API key from clipboard (user may have copied it)
     if (window.QwenCodeBridge?.clipboardRead) {
       try {
         const result = await window.QwenCodeBridge.clipboardRead();
         const clipboardText = result.value || '';
-        // Check if clipboard contains a Z.ai API key pattern
         const apiKeyMatch = clipboardText.match(/[a-f0-9]{32}\.[a-zA-Z0-9]+/);
         if (apiKeyMatch) {
           const extractedKey = apiKeyMatch[0];
-          // Update the Z.ai provider with this key
           const providers = config.providers.map((p: any) =>
             p.id === 'zai' ? { ...p, apiKey: extractedKey } : p
           );
@@ -124,19 +88,20 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
           alert(`API Key encontrada y guardada: ${extractedKey.substring(0, 10)}...`);
           return;
         }
-      } catch (e) {
-        // Clipboard read failed
-      }
+      } catch (e) { }
     }
     alert('No se encontro API key en el portapapeles. Copia tu API key desde Z.ai y presiona este boton.');
   }, [config, updateConfig]);
 
-  // Check if native webview is available on mount
+  // Check if native on mount
   useEffect(() => {
+    // Auto-open Z.ai chat on native
     if (isNative()) {
-      setUseNative(true);
+      // Don't auto-open, let user choose
     }
   }, []);
+
+  const isNtv = isNative();
 
   return (
     <div style={{
@@ -154,44 +119,6 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
         borderBottom: '1px solid var(--border-primary)',
         zIndex: 10,
       }}>
-        {/* Back/Close button */}
-        <button
-          onClick={goBack}
-          title="Volver"
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            padding: '6px',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 16,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          {useNative ? 'X' : '<'}
-        </button>
-
-        {/* Refresh button */}
-        <button
-          onClick={refresh}
-          title="Refrescar"
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            padding: '6px',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          R
-        </button>
-
         {/* URL Bar */}
         <form onSubmit={handleUrlSubmit} style={{ flex: 1, display: 'flex' }}>
           <input
@@ -227,7 +154,6 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
             fontSize: 14,
             display: 'flex',
             alignItems: 'center',
-            position: 'relative',
           }}
         >
           *
@@ -309,8 +235,8 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
 
       {/* Content Area */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Native WebView mode - show status and controls */}
-        {useNative && showWebView && (
+        {/* Native mode - show welcome/controls */}
+        {isNtv && (
           <div style={{
             height: '100%',
             display: 'flex',
@@ -319,6 +245,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
             justifyContent: 'center',
             padding: 'var(--space-xl)',
             gap: 'var(--space-lg)',
+            overflowY: 'auto',
           }}>
             <div style={{
               width: 80,
@@ -329,224 +256,34 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: 36,
+              fontWeight: 700,
+              color: 'white',
               boxShadow: '0 0 40px rgba(74, 144, 217, 0.3)',
             }}>
               Z
             </div>
+
             <div style={{ textAlign: 'center' }}>
-              <h2 style={{ color: 'var(--text-primary)', fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
-                Z.ai abierto en navegador
+              <h2 style={{ color: 'var(--text-primary)', fontSize: 20, fontWeight: 600, marginBottom: 4 }}>
+                Z.ai Navegador
               </h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 300, lineHeight: 1.5 }}>
-                Z.ai se abrio en el WebView nativo. Puedes logearte, chatear con GLM-5.1 y gestionar tu cuenta directamente.
+              <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 320, lineHeight: 1.5 }}>
+                Accede a Z.ai usando Chrome Custom Tabs o el navegador de tu dispositivo. Inicia sesion y usa GLM-5.1 directamente.
               </p>
             </div>
 
-            {/* Quick actions */}
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 'var(--space-sm)',
-              width: '100%',
-              maxWidth: 320,
-            }}>
-              <button
-                onClick={() => openNativeWebView(ZAI_CHAT_URL)}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'linear-gradient(135deg, #4a90d9, #6b6bff)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'white',
-                  cursor: 'pointer',
-                  fontSize: 15,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 'var(--space-sm)',
-                }}
-              >
-                Abrir Z.ai Chat
-              </button>
-              <button
-                onClick={() => openNativeWebView(ZAI_LOGIN_URL)}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 'var(--space-sm)',
-                }}
-              >
-                Iniciar Sesion
-              </button>
-              <button
-                onClick={() => openNativeWebView(ZAI_API_KEYS_URL)}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 'var(--space-sm)',
-                }}
-              >
-                Obtener API Key
-              </button>
-              <button
-                onClick={extractApiKey}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'rgba(74, 222, 128, 0.1)',
-                  border: '1px solid rgba(74, 222, 128, 0.3)',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'var(--success)',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 'var(--space-sm)',
-                }}
-              >
-                Guardar API Key del Portapapeles
-              </button>
-              <button
-                onClick={closeNativeView}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'rgba(248, 113, 113, 0.1)',
-                  border: '1px solid rgba(248, 113, 113, 0.3)',
-                  borderRadius: 'var(--radius-md)',
-                  color: '#f87171',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 'var(--space-sm)',
-                }}
-              >
-                Cerrar Navegador
-              </button>
-            </div>
-
-            {/* Info box */}
-            <div style={{
-              background: 'rgba(107, 107, 255, 0.05)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: 'var(--radius-md)',
-              padding: 'var(--space-md)',
-              maxWidth: 320,
-              width: '100%',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-secondary)', marginBottom: 6 }}>
-                Como obtener API Key gratis:
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-                1. Ve a <b>Z.ai Login</b> y crea una cuenta<br/>
-                2. Ve a <b>Obtener API Key</b><br/>
-                3. Crea una nueva API Key<br/>
-                4. Copiala al portapapeles<br/>
-                5. Presiona <b>Guardar API Key</b><br/>
-                <span style={{ color: 'var(--success)', fontWeight: 600 }}>20M tokens gratis!</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Iframe mode (fallback for web/development) */}
-        {!useNative && showWebView && (
-          <>
-            {isLoading && (
+            {/* Opening indicator */}
+            {opening && (
               <div style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                padding: '8px var(--space-md)',
+                padding: '8px 16px',
                 background: 'var(--accent-primary)',
                 color: 'white',
-                fontSize: 12,
-                textAlign: 'center',
-                zIndex: 5,
+                borderRadius: 'var(--radius-md)',
+                fontSize: 13,
               }}>
-                Cargando {browserUrl}...
+                Abriendo navegador...
               </div>
             )}
-            <iframe
-              ref={iframeRef}
-              src={browserUrl}
-              onLoad={() => setIsLoading(false)}
-              style={{
-                width: '100%',
-                height: '100%',
-                border: 'none',
-                background: 'white',
-              }}
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"
-              allow="clipboard-read; clipboard-write"
-            />
-          </>
-        )}
-
-        {/* Welcome Screen (no page loaded yet) */}
-        {!showWebView && (
-          <div style={{
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 'var(--space-xl)',
-            gap: 'var(--space-lg)',
-          }}>
-            {/* Logo */}
-            <div style={{
-              width: 100,
-              height: 100,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #4a90d9, #6b6bff, #8b5cf6)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 48,
-              fontWeight: 700,
-              color: 'white',
-              boxShadow: '0 0 60px rgba(74, 144, 217, 0.3)',
-            }}>
-              Z
-            </div>
-
-            <div style={{ textAlign: 'center' }}>
-              <h1 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
-                Z.ai Browser
-              </h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                Accede a Z.ai y usa GLM-5.1 desde tu cuenta
-              </p>
-            </div>
 
             {/* Quick access cards */}
             <div style={{
@@ -568,7 +305,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                     color: 'var(--text-primary)',
                     cursor: 'pointer',
                     textAlign: 'left',
-                    transition: 'all var(--transition-fast)',
+                    transition: 'all 0.15s ease',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.borderColor = 'var(--border-active)';
@@ -586,9 +323,9 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
               ))}
             </div>
 
-            {/* Main CTA */}
+            {/* Main CTA - Chrome Custom Tabs (most reliable) */}
             <button
-              onClick={() => navigateTo(ZAI_CHAT_URL)}
+              onClick={() => navigateTo(ZAI_CHAT_URL, 'customtabs')}
               style={{
                 padding: '16px 40px',
                 background: 'linear-gradient(135deg, #4a90d9, #6b6bff)',
@@ -602,45 +339,166 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 'var(--space-sm)',
+                width: '100%',
+                maxWidth: 400,
+                justifyContent: 'center',
               }}
             >
               Abrir Z.ai Chat
             </button>
 
-            {/* Features info */}
+            {/* Alternative: WebView */}
+            <button
+              onClick={() => navigateTo(ZAI_CHAT_URL, 'webview')}
+              style={{
+                width: '100%',
+                maxWidth: 400,
+                padding: '14px',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                fontSize: 14,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 'var(--space-sm)',
+              }}
+            >
+              Abrir en WebView integrado
+            </button>
+
+            {/* Alternative: External browser */}
+            <button
+              onClick={() => navigateTo(ZAI_CHAT_URL, 'browser')}
+              style={{
+                width: '100%',
+                maxWidth: 400,
+                padding: '14px',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 400,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 'var(--space-sm)',
+              }}
+            >
+              Abrir en navegador externo
+            </button>
+
+            {/* API Key extraction */}
+            <button
+              onClick={extractApiKey}
+              style={{
+                width: '100%',
+                maxWidth: 400,
+                padding: '14px',
+                background: 'rgba(74, 222, 128, 0.1)',
+                border: '1px solid rgba(74, 222, 128, 0.3)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--success)',
+                cursor: 'pointer',
+                fontSize: 14,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 'var(--space-sm)',
+              }}
+            >
+              Guardar API Key del Portapapeles
+            </button>
+
+            {/* Info box */}
             <div style={{
-              background: 'var(--bg-card)',
+              background: 'rgba(107, 107, 255, 0.05)',
               border: '1px solid var(--border-primary)',
               borderRadius: 'var(--radius-md)',
               padding: 'var(--space-md)',
               maxWidth: 400,
               width: '100%',
             }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-secondary)', marginBottom: 8 }}>
-                Que puedes hacer aqui:
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-secondary)', marginBottom: 6 }}>
+                Como usar Z.ai:
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 2 }}>
-                <div>Chatear con GLM-5.1 gratis</div>
-                <div>Iniciar sesion en tu cuenta Z.ai</div>
-                <div>Crear y gestionar API Keys</div>
-                <div>Copiar API Key y guardarla en la app</div>
-                <div>Ver tu uso y saldo de tokens</div>
-                <div>Configurar modelos y ajustes</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+                1. Toca <b>Abrir Z.ai Chat</b> (usa Chrome Custom Tabs)<br/>
+                2. Inicia sesion con tu cuenta Z.ai<br/>
+                3. Chatea con GLM-5.1 directamente<br/>
+                4. Para API Key: ve a API Keys, copiala y usa el boton verde<br/>
+                <span style={{ color: 'var(--success)', fontWeight: 600 }}>20M tokens gratis para cuentas nuevas!</span>
               </div>
             </div>
+          </div>
+        )}
 
-            {!isNative() && (
-              <div style={{
-                fontSize: 11,
-                color: 'var(--warning)',
-                background: 'rgba(251, 191, 36, 0.1)',
-                padding: '6px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid rgba(251, 191, 36, 0.2)',
-              }}>
-                En modo web, el navegador integrado puede tener limitaciones. En Android se abre en WebView nativo.
-              </div>
-            )}
+        {/* Web mode - iframe fallback */}
+        {!isNtv && showWebView && (
+          <iframe
+            ref={iframeRef}
+            src={browserUrl}
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              background: 'white',
+            }}
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"
+            allow="clipboard-read; clipboard-write"
+          />
+        )}
+
+        {/* Web mode - welcome screen */}
+        {!isNtv && !showWebView && (
+          <div style={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-xl)',
+            gap: 'var(--space-lg)',
+          }}>
+            <div style={{
+              width: 100,
+              height: 100,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #4a90d9, #6b6bff, #8b5cf6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 48,
+              fontWeight: 700,
+              color: 'white',
+              boxShadow: '0 0 60px rgba(74, 144, 217, 0.3)',
+            }}>
+              Z
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <h1 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
+                Z.ai Browser
+              </h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                Accede a Z.ai y usa GLM-5.1 desde tu cuenta
+              </p>
+            </div>
+            <div style={{
+              fontSize: 11,
+              color: 'var(--warning)',
+              background: 'rgba(251, 191, 36, 0.1)',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid rgba(251, 191, 36, 0.2)',
+            }}>
+              En modo web, el navegador integrado puede tener limitaciones. En Android se abre con Chrome Custom Tabs.
+            </div>
           </div>
         )}
       </div>

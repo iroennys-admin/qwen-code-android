@@ -278,6 +278,8 @@ function mapToolName(name: string): ToolCall['type'] {
     file_write: 'file_write',
     file_edit: 'file_edit',
     web_fetch: 'web_fetch',
+    web_search: 'web_search',
+    web_scrape: 'web_scrape',
     glob: 'glob',
     grep: 'grep',
     code_execute: 'code_execute',
@@ -286,6 +288,7 @@ function mapToolName(name: string): ToolCall['type'] {
     mv: 'mv',
     cp: 'cp',
     list_dir: 'list_dir',
+    npx_install: 'npx_install',
   };
   return map[name] || 'shell';
 }

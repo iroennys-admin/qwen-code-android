@@ -323,6 +323,8 @@ const TOOL_ICONS: Record<string, string> = {
   file_write: '\u270F\uFE0F',
   file_edit: '\uD83D\uDD27',
   web_fetch: '\uD83C\uDF10',
+  web_search: '\uD83D\uDD0E',
+  web_scrape: '\uD83D\uDD0D',
   glob: '\uD83D\uDD0D',
   grep: '\uD83D\uDD0E',
   code_execute: '\u26A1',
@@ -331,6 +333,7 @@ const TOOL_ICONS: Record<string, string> = {
   mv: '\uD83D\uDCE6',
   cp: '\uD83D\uDCCB',
   list_dir: '\uD83D\uDCC2',
+  npx_install: '\uD83D\uDE80',
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -339,6 +342,8 @@ const TOOL_LABELS: Record<string, string> = {
   file_write: 'Escribir archivo',
   file_edit: 'Editar archivo',
   web_fetch: 'Obtener web',
+  web_search: 'Buscar en web',
+  web_scrape: 'Scrapear pagina',
   glob: 'Buscar archivos',
   grep: 'Buscar texto',
   code_execute: 'Ejecutar codigo',
@@ -347,6 +352,7 @@ const TOOL_LABELS: Record<string, string> = {
   mv: 'Mover',
   cp: 'Copiar',
   list_dir: 'Listar directorio',
+  npx_install: 'NPX Skill',
 };
 
 function ToolCallCard({ toolCall, msgId, stepNumber, totalSteps, onApprove, onDeny }: {

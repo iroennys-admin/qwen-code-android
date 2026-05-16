@@ -42,7 +42,7 @@ export interface ToolCall {
   duration?: number;
 }
 
-export type ToolType = 'shell' | 'file_read' | 'file_write' | 'file_edit' | 'web_fetch' | 'glob' | 'grep' | 'code_execute' | 'mkdir' | 'rm' | 'mv' | 'cp' | 'list_dir';
+export type ToolType = 'shell' | 'file_read' | 'file_write' | 'file_edit' | 'web_fetch' | 'web_search' | 'web_scrape' | 'glob' | 'grep' | 'code_execute' | 'mkdir' | 'rm' | 'mv' | 'cp' | 'list_dir' | 'npx_install';
 
 export interface ToolResult {
   toolCallId: string;

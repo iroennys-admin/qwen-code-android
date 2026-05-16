@@ -31,6 +31,11 @@ function buildHeaders(config: AppConfig, apiKey: string): Record<string, string>
     headers['X-Title'] = 'Qwen Code Android';
   }
   
+  // Z.ai/GLM works best with its own User-Agent
+  if (config.activeProvider === 'zai' || config.activeProvider === 'modal') {
+    headers['User-Agent'] = 'QwenCode/3.0';
+  }
+  
   return headers;
 }
 

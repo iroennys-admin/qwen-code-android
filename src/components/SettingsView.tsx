@@ -515,7 +515,7 @@ function AboutTab() {
       </div>
       
       <h2 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700 }}>Qwen Code</h2>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v2.0.0 — Agentic Edition</p>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v3.0.0 — Full Device Control</p>
       
       <div style={{
         background: 'var(--bg-card)',
@@ -528,14 +528,40 @@ function AboutTab() {
         color: 'var(--text-secondary)',
         lineHeight: 1.8,
       }}>
-        <div>🤖 Agente autonomo con loop agentic</div>
+        <div>🤖 GLM-5.1 / 28 herramientas</div>
         <div>⚡ Ejecucion de codigo (Python, JS, Bash)</div>
         <div>💻 Comandos shell completos</div>
-        <div>📁 Sistema de archivos completo</div>
-        <div>🔧 13 herramientas disponibles</div>
-        <div>🧠 Razonamiento visible paso a paso</div>
+        <div>📁 Acceso completo al sistema de archivos</div>
+        <div>📱 WhatsApp, SMS, llamadas, contactos</div>
+        <div>🖱️ UI Automation (Accessibility Service)</div>
+        <div>🔔 Lectura de notificaciones</div>
+        <div>🔍 Busqueda web y scraping</div>
         <div>🌐 Soporte de proxy para Cuba</div>
-        <div>📱 Compatible 32/64 bits</div>
+        <div>📦 NPX skill installation</div>
+        <div>🏗️ Compatible 32/64 bits</div>
+      </div>
+      
+      <div style={{
+        background: 'rgba(74, 222, 128, 0.05)',
+        border: '1px solid rgba(74, 222, 128, 0.2)',
+        borderRadius: 'var(--radius-md)',
+        padding: 'var(--space-md)',
+        maxWidth: 400,
+        width: '100%',
+        fontSize: 12,
+        color: 'var(--text-secondary)',
+        lineHeight: 1.6,
+      }}>
+        <div style={{ fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>
+          🆓 Como obtener API Key GRATIS para GLM-5.1:
+        </div>
+        <div>1. Ve a <b>z.ai</b> y crea una cuenta</div>
+        <div>2. Ve a <b>z.ai/manage-apikey/apikey-list</b></div>
+        <div>3. Crea una API Key y pegala aqui</div>
+        <div>4. Nuevo: 20M tokens gratis en bigmodel.cn</div>
+        <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--accent-secondary)' }}>
+          O usa Modal.com (GLM-5.1 gratis, sin tarjeta)
+        </div>
       </div>
       
       <div style={{

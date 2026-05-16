@@ -41,7 +41,39 @@ const GROK_MODELS: ModelInfo[] = [
   { id: 'grok-2', name: 'Grok 2', contextLength: 131072 },
 ];
 
+const ZAI_MODELS: ModelInfo[] = [
+  { id: 'glm-5.1', name: 'GLM-5.1 (Flagship)', contextLength: 203000 },
+  { id: 'glm-5', name: 'GLM-5', contextLength: 200000 },
+  { id: 'glm-5-turbo', name: 'GLM-5 Turbo', contextLength: 200000 },
+  { id: 'glm-4.7', name: 'GLM-4.7', contextLength: 131072 },
+  { id: 'glm-4.5-air', name: 'GLM-4.5 Air', contextLength: 131072 },
+  { id: 'glm-4.4', name: 'GLM-4.4', contextLength: 131072 },
+  { id: 'glm-4.3', name: 'GLM-4.3', contextLength: 131072 },
+];
+
+const MODAL_MODELS: ModelInfo[] = [
+  { id: 'glm-5.1', name: 'GLM-5.1 (Free)', contextLength: 203000 },
+];
+
 export const DEFAULT_PROVIDERS: Provider[] = [
+  {
+    id: 'zai',
+    name: 'Z.ai (GLM)',
+    baseUrl: 'https://api.z.ai/api/paas/v4',
+    proxyBaseUrl: 'https://zai.aiql.com/v1',
+    apiKey: '',
+    models: ZAI_MODELS,
+    enabled: true,
+  },
+  {
+    id: 'modal',
+    name: 'Modal (Free GLM-5.1)',
+    baseUrl: 'https://modal.com/glm-5-endpoint/v1',
+    proxyBaseUrl: 'https://modal.aiql.com/v1',
+    apiKey: '',
+    models: MODAL_MODELS,
+    enabled: true,
+  },
   {
     id: 'nvidia',
     name: 'NVIDIA NIM',
@@ -218,9 +250,9 @@ The user communicates in Spanish. Respond in Spanish but write code, file names,
 
 export const DEFAULT_CONFIG: AppConfig = {
   providers: DEFAULT_PROVIDERS,
-  activeProvider: 'nvidia',
-  activeModel: 'nvidia/nemotron-3-super-120b-a12b',
-  proxyEnabled: true,
+  activeProvider: 'zai',
+  activeModel: 'glm-5.1',
+  proxyEnabled: false,
   proxyBaseUrl: CUBA_PROXY_BASE,
   streaming: true,
   temperature: 0.7,

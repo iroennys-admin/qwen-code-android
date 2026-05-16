@@ -25,11 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import androidx.browser.customtabs.CustomTabsCallback;
-import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsIntent;
-import androidx.browser.customtabs.CustomTabsServiceConnection;
-import androidx.browser.customtabs.CustomTabsSession;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -69,7 +65,6 @@ public class ZAIWebViewPlugin extends Plugin {
     private TextView errorDetail;
     private boolean isWebViewOpen = false;
     private String lastLoadedUrl = null;
-    private CustomTabsSession customTabsSession;
 
     @PluginMethod
     public void openWebView(PluginCall call) {
@@ -147,18 +142,6 @@ public class ZAIWebViewPlugin extends Plugin {
             CustomTabsIntent customTabsIntent = builder.build();
             customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             customTabsIntent.intent.setPackage(CUSTOM_TABS_PACKAGE);
-
-            // Try to use a warmed-up session
-            try {
-                if (customTabsSession != null) {
-                    customTabsIntent.intent.putExtra(
-                        CustomTabsIntent.EXTRA_SESSION,
-                        customTabsSession.getSessionId()
-                    );
-                }
-            } catch (Exception e) {
-                // Session not available, continue without it
-            }
 
             customTabsIntent.launchUrl(getActivity(), Uri.parse(url));
             return true;

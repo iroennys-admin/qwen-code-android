@@ -10,16 +10,25 @@ import FileExplorer from './components/FileExplorer';
 import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
 
+const CONFIG_VERSION = 2;
+
 function loadConfig(): AppConfig {
   try {
-    const saved = localStorage.getItem('qwencode_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return { ...DEFAULT_CONFIG, ...parsed, providers: parsed.providers?.map((p: any) => ({
-        ...p,
-        models: p.models || DEFAULT_CONFIG.providers.find(dp => dp.id === p.id)?.models || []
-      })) || DEFAULT_CONFIG.providers };
+    const savedVersion = localStorage.getItem('qwencode_config_version');
+    if (savedVersion && parseInt(savedVersion) >= CONFIG_VERSION) {
+      const saved = localStorage.getItem('qwencode_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const merged = { ...DEFAULT_CONFIG, ...parsed, providers: parsed.providers?.map((p: any) => ({
+          ...DEFAULT_CONFIG.providers.find(dp => dp.id === p.id),
+          ...p,
+          models: DEFAULT_CONFIG.providers.find(dp => dp.id === p.id)?.models || p.models || []
+        })) || DEFAULT_CONFIG.providers };
+        return merged;
+      }
     }
+    // Reset to new defaults
+    localStorage.setItem('qwencode_config_version', String(CONFIG_VERSION));
   } catch {}
   return DEFAULT_CONFIG;
 }

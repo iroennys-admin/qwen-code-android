@@ -1,10 +1,11 @@
 // Default configuration for the Qwen Code Android app
-// Proxy base URL for Cuba connectivity (iql)
-const CUBA_PROXY_BASE = 'https://iql.is';
+// Proxy base URL for Cuba connectivity (aiql)
+const CUBA_PROXY_BASE = 'https://nvidia.aiql.com';
 
 import type { AppConfig, Provider, ModelInfo } from '../types';
 
-const NVIDIAMODELS: ModelInfo[] = [
+const NVIDIA_MODELS: ModelInfo[] = [
+  { id: 'nvidia/nemotron-3-super-120b-a12b', name: 'Nemotron 3 Super 120B', contextLength: 131072 },
   { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B', contextLength: 131072 },
   { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', name: 'Nemotron Super 49B', contextLength: 131072 },
   { id: 'nvidia/deepseek-llm-r1', name: 'DeepSeek R1', contextLength: 131072 },
@@ -43,28 +44,28 @@ const GROK_MODELS: ModelInfo[] = [
 
 export const DEFAULT_PROVIDERS: Provider[] = [
   {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    proxyBaseUrl: `${CUBA_PROXY_BASE}/openrouter/api/v1`,
-    apiKey: '',
-    models: OPENROUTER_MODELS,
-    enabled: true,
-  },
-  {
     id: 'nvidia',
     name: 'NVIDIA NIM',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    proxyBaseUrl: `${CUBA_PROXY_BASE}/nvidia/v1`,
+    proxyBaseUrl: 'https://nvidia.aiql.com/v1',
+    apiKey: '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',
+    models: NVIDIA_MODELS,
+    enabled: true,
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    proxyBaseUrl: 'https://openrouter.aiql.com/v1',
     apiKey: '',
-    models: NVIDIAMODELS,
+    models: OPENROUTER_MODELS,
     enabled: true,
   },
   {
     id: 'mistral',
     name: 'Mistral',
     baseUrl: 'https://api.mistral.ai/v1',
-    proxyBaseUrl: `${CUBA_PROXY_BASE}/mistral/v1`,
+    proxyBaseUrl: 'https://mistral.aiql.com/v1',
     apiKey: '',
     models: MISTRAL_MODELS,
     enabled: true,
@@ -73,7 +74,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     id: 'grok',
     name: 'Grok (xAI)',
     baseUrl: 'https://api.x.ai/v1',
-    proxyBaseUrl: `${CUBA_PROXY_BASE}/xai/v1`,
+    proxyBaseUrl: 'https://xai.aiql.com/v1',
     apiKey: '',
     models: GROK_MODELS,
     enabled: true,
@@ -82,14 +83,14 @@ export const DEFAULT_PROVIDERS: Provider[] = [
 
 export const DEFAULT_CONFIG: AppConfig = {
   providers: DEFAULT_PROVIDERS,
-  activeProvider: 'openrouter',
-  activeModel: 'qwen/qwen3-235b-a22b:free',
+  activeProvider: 'nvidia',
+  activeModel: 'nvidia/nemotron-3-super-120b-a12b',
   proxyEnabled: true,
   proxyBaseUrl: CUBA_PROXY_BASE,
   streaming: true,
   temperature: 0.7,
   maxTokens: 8192,
-  systemPrompt: `You are Qwen Code, an advanced AI coding assistant running on Android/Termux. You have access to tools that let you execute shell commands, read and write files, search the web, and more. When the user asks you to do something, use the appropriate tools to accomplish the task. Always explain what you're doing step by step.
+  systemPrompt: `You are Qwen Code, an advanced AI coding assistant running on Android. You have access to tools that let you execute shell commands, read and write files, search the web, and more. When the user asks you to do something, use the appropriate tools to accomplish the task. Always explain what you're doing step by step.
 
 Available tools:
 - shell: Execute shell commands on the device

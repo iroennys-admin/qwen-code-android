@@ -1,11 +1,13 @@
 import type { AppConfig, ChatMessage, StreamChunk, ToolCall } from '../types';
 import { TOOL_DEFINITIONS } from '../utils/config';
 
+const MOBILE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
+
 function getBaseUrl(config: AppConfig): string {
   const provider = config.providers.find(p => p.id === config.activeProvider);
   if (!provider) return '';
   
-  if (config.proxyEnabled && config.proxyBaseUrl) {
+  if (config.proxyEnabled && provider.proxyBaseUrl) {
     return provider.proxyBaseUrl;
   }
   return provider.baseUrl;
@@ -14,6 +16,23 @@ function getBaseUrl(config: AppConfig): string {
 function getApiKey(config: AppConfig): string {
   const provider = config.providers.find(p => p.id === config.activeProvider);
   return provider?.apiKey || '';
+}
+
+function buildHeaders(config: AppConfig, apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`,
+    'User-Agent': MOBILE_USER_AGENT,
+    'Accept': 'application/json',
+  };
+  
+  // OpenRouter specific headers
+  if (config.activeProvider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://github.com/iroennys-admin/qwen-code-android';
+    headers['X-Title'] = 'Qwen Code Android';
+  }
+  
+  return headers;
 }
 
 function buildMessages(messages: ChatMessage[], systemPrompt: string): Array<{role: string; content: string}> {
@@ -62,6 +81,7 @@ export async function* streamChat(
   
   const url = `${baseUrl}/chat/completions`;
   const apiMessages = buildMessages(messages, config.systemPrompt);
+  const headers = buildHeaders(config, apiKey);
   
   const body = JSON.stringify({
     model: config.activeModel,
@@ -72,29 +92,18 @@ export async function* streamChat(
     tools: TOOL_DEFINITIONS,
   });
   
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
-  };
-  
-  // OpenRouter specific headers
-  if (config.activeProvider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://github.com/iroennys-admin/qwen-code-android';
-    headers['X-Title'] = 'Qwen Code Android';
-  }
-  
   if (!config.streaming) {
-    // Non-streaming request
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body,
-      });
+      const response = await fetch(url, { method: 'POST', headers, body });
       
       if (!response.ok) {
         const errText = await response.text();
-        yield { type: 'error', error: `API Error ${response.status}: ${errText}` };
+        // Check for Cloudflare challenge
+        if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
+          yield { type: 'error', error: `Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.` };
+          return;
+        }
+        yield { type: 'error', error: `API Error ${response.status}: ${errText.substring(0, 500)}` };
         return;
       }
       
@@ -128,15 +137,15 @@ export async function* streamChat(
   
   // Streaming request using SSE
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-    });
+    const response = await fetch(url, { method: 'POST', headers, body });
     
     if (!response.ok) {
       const errText = await response.text();
-      yield { type: 'error', error: `API Error ${response.status}: ${errText}` };
+      if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
+        yield { type: 'error', error: `Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.` };
+        return;
+      }
+      yield { type: 'error', error: `API Error ${response.status}: ${errText.substring(0, 500)}` };
       return;
     }
     
@@ -173,18 +182,15 @@ export async function* streamChat(
           
           if (!choice) continue;
           
-          // Content delta
           const delta = choice.delta;
           if (delta?.content) {
             yield { type: 'content', content: delta.content };
           }
           
-          // Thinking/reasoning delta
           if (delta?.reasoning_content) {
             yield { type: 'thinking', thinking: delta.reasoning_content };
           }
           
-          // Tool calls
           if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
               if (tc.function?.name) {
@@ -199,11 +205,6 @@ export async function* streamChat(
                 yield { type: 'tool_call', toolCall };
               }
             }
-          }
-          
-          // Finish reason
-          if (choice.finish_reason === 'tool_calls') {
-            // Tool calls will be handled by the UI
           }
           
           if (choice.finish_reason === 'stop') {
@@ -243,6 +244,7 @@ export async function fetchModels(config: AppConfig): Promise<string[]> {
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${provider.apiKey}`,
+        'User-Agent': MOBILE_USER_AGENT,
       },
     });
     
@@ -265,11 +267,16 @@ export async function testApiKey(config: AppConfig): Promise<{success: boolean; 
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${provider.apiKey}`,
+        'User-Agent': MOBILE_USER_AGENT,
       },
     });
     
     if (!response.ok) {
-      return { success: false, error: `HTTP ${response.status}: ${await response.text()}` };
+      const errText = await response.text();
+      if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
+        return { success: false, error: 'Proxy bloqueado por Cloudflare' };
+      }
+      return { success: false, error: `HTTP ${response.status}` };
     }
     const data = await response.json();
     return { success: true, modelCount: data.data?.length || 0 };

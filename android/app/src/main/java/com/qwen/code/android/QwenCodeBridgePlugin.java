@@ -1354,7 +1354,7 @@ public class QwenCodeBridgePlugin extends Plugin {
                     return;
                 }
                 
-                JSArray notifications = listener.getActiveNotifications();
+                JSArray notifications = listener.getAllNotificationsAsJSArray();
                 JSObject ret = new JSObject();
                 ret.put("value", notifications);
                 new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));

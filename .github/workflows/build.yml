@@ -30,6 +30,9 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       
+    - name: Install Android SDK Platform 36
+      run: sdkmanager "platforms;android-36"
+      
     - name: Install npm dependencies
       run: npm install
       
@@ -45,15 +48,15 @@ jobs:
     - name: Accept Android Licenses
       run: yes | sdkmanager --licenses 2>/dev/null || true
       
-    - name: Build APK (Debug - Universal)
+    - name: Build APK (Debug)
       working-directory: android
       run: ./gradlew assembleDebug
       
     - name: List APK outputs
       run: find android/app/build/outputs -name "*.apk" -type f
       
-    - name: Upload Debug APK
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: qwen-code-debug-universal
+        name: qwen-code-android-apk
         path: android/app/build/outputs/apk/debug/*.apk

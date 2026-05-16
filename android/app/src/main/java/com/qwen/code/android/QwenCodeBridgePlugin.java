@@ -71,11 +71,24 @@ public class QwenCodeBridgePlugin extends Plugin {
     
     private void requestAllPermissions() {
         try {
-            // Request standard permissions
+            // Request storage permissions directly
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                requestPermissionForAlias("media", getActivity(), "storageCallback");
+                // Android 13+ - request media permissions
+                if (getActivity().checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                    getActivity().requestPermissions(new String[]{
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_AUDIO
+                    }, 100);
+                }
             } else {
-                requestPermissionForAlias("storage", getActivity(), "storageCallback");
+                // Android 12 and below - request storage permissions
+                if (getActivity().checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    getActivity().requestPermissions(new String[]{
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    }, 101);
+                }
             }
             
             // Request MANAGE_EXTERNAL_STORAGE for Android 11+ (all files access)

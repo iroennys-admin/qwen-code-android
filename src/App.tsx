@@ -1,79 +1,77 @@
+// ==========================================
+// OpenCode Android - Main App
+// ==========================================
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import type { AppConfig, ChatMessage, ViewMode, ToolCall, AgentState, ApiMessage } from './types';
+import type { AppConfig, OpenCodeMessage, ViewMode, OpenCodeToolCall, AgentState, ApiMessage } from './types';
 import { DEFAULT_CONFIG } from './utils/config';
 import { runAgentLoop, chatMessagesToApiMessages } from './services/agent';
 import { isNative } from './services/bridge';
 import Sidebar from './components/Sidebar';
-import ChatView from './components/ChatView';
+import OpenCodeChat from './components/OpenCodeChat';
 import TerminalView from './components/TerminalView';
 import FileExplorer from './components/FileExplorer';
 import SettingsView from './components/SettingsView';
-import WelcomeScreen from './components/WelcomeScreen';
-import ZAIBrowser from './components/ZAIBrowser';
-import OpenCodeView from './components/OpenCodeView';
 
-const CONFIG_VERSION = 7;
+const CONFIG_VERSION = 8;
 
 function loadConfig(): AppConfig {
   try {
-    const savedVersion = localStorage.getItem('qwencode_config_version');
+    const savedVersion = localStorage.getItem('opencode_config_version');
     if (savedVersion && parseInt(savedVersion) >= CONFIG_VERSION) {
-      const saved = localStorage.getItem('qwencode_config');
+      const saved = localStorage.getItem('opencode_config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const merged = { 
-          ...DEFAULT_CONFIG, 
-          ...parsed, 
+        const merged = {
+          ...DEFAULT_CONFIG,
+          ...parsed,
           providers: parsed.providers?.map((p: any) => ({
             ...DEFAULT_CONFIG.providers.find(dp => dp.id === p.id),
             ...p,
             models: DEFAULT_CONFIG.providers.find(dp => dp.id === p.id)?.models || p.models || []
-          })) || DEFAULT_CONFIG.providers 
+          })) || DEFAULT_CONFIG.providers
         };
         return merged;
       }
     }
-    // Reset to new defaults
-    localStorage.setItem('qwencode_config_version', String(CONFIG_VERSION));
+    localStorage.setItem('opencode_config_version', String(CONFIG_VERSION));
   } catch {}
   return DEFAULT_CONFIG;
 }
 
 function saveConfig(config: AppConfig) {
   try {
-    localStorage.setItem('qwencode_config', JSON.stringify(config));
+    localStorage.setItem('opencode_config', JSON.stringify(config));
   } catch {}
 }
 
-function loadMessages(): ChatMessage[] {
+function loadMessages(): OpenCodeMessage[] {
   try {
-    const saved = localStorage.getItem('qwencode_messages');
+    const saved = localStorage.getItem('opencode_messages');
     if (saved) return JSON.parse(saved);
   } catch {}
   return [];
 }
 
-function saveMessages(messages: ChatMessage[]) {
+function saveMessages(messages: OpenCodeMessage[]) {
   try {
-    localStorage.setItem('qwencode_messages', JSON.stringify(messages.slice(-200)));
+    localStorage.setItem('opencode_messages', JSON.stringify(messages.slice(-200)));
   } catch {}
 }
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(loadConfig);
-  const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
+  const [messages, setMessages] = useState<OpenCodeMessage[]>(loadMessages);
   const [view, setView] = useState<ViewMode>('chat');
   const [isGenerating, setIsGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [agentState, setAgentState] = useState<AgentState>({ status: 'idle', currentStep: 0, totalSteps: 0 });
   const abortRef = useRef(false);
 
-  // Save config and messages on change
   useEffect(() => { saveConfig(config); }, [config]);
   useEffect(() => { saveMessages(messages); }, [messages]);
 
   const activeProvider = config.providers.find(p => p.id === config.activeProvider);
-  // OpenCode Zen doesn't need an API key for free models - always "ready"
   const hasApiKey = activeProvider?.id === 'opencode' || !!activeProvider?.apiKey;
 
   const updateConfig = useCallback((updates: Partial<AppConfig>) => {
@@ -82,17 +80,24 @@ export default function App() {
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isGenerating) return;
-    
+
+    // Handle slash commands
+    const trimmed = content.trim();
+    if (trimmed.startsWith('/')) {
+      handleSlashCommand(trimmed);
+      return;
+    }
+
     abortRef.current = false;
-    
-    const userMsg: ChatMessage = {
+
+    const userMsg: OpenCodeMessage = {
       id: `msg_${Date.now()}`,
       role: 'user',
-      content: content.trim(),
+      content: trimmed,
       timestamp: Date.now(),
     };
-    
-    const assistantMsg: ChatMessage = {
+
+    const assistantMsg: OpenCodeMessage = {
       id: `msg_${Date.now() + 1}`,
       role: 'assistant',
       content: '',
@@ -103,29 +108,27 @@ export default function App() {
       model: config.activeModel,
       provider: config.activeProvider,
     };
-    
+
     const newMessages = [...messages, userMsg, assistantMsg];
     setMessages(newMessages);
     setIsGenerating(true);
-    
-    // Build API message history from previous messages (excluding the new streaming one)
+
     const previousMessages = newMessages.slice(0, -1);
-    const apiHistory = chatMessagesToApiMessages(previousMessages.filter(m => 
+    const apiHistory = chatMessagesToApiMessages(previousMessages.filter(m =>
       m.role === 'user' || m.role === 'assistant'
     ));
-    
-    // Accumulators for the current response
+
     let fullContent = '';
     let fullThinking = '';
-    const toolCalls: ToolCall[] = [];
-    const toolCallMap = new Map<string, ToolCall>();
-    
+    const toolCalls: OpenCodeToolCall[] = [];
+    const toolCallMap = new Map<string, OpenCodeToolCall>();
+
     try {
-      await runAgentLoop(config, apiHistory, content.trim(), {
+      await runAgentLoop(config, apiHistory, trimmed, {
         onStateChange: (state) => {
           setAgentState(state);
         },
-        
+
         onContent: (text) => {
           fullContent += text;
           setMessages(prev => {
@@ -137,7 +140,7 @@ export default function App() {
             return updated;
           });
         },
-        
+
         onThinking: (text) => {
           fullThinking += text;
           setMessages(prev => {
@@ -149,7 +152,7 @@ export default function App() {
             return updated;
           });
         },
-        
+
         onToolCall: (tc) => {
           toolCalls.push(tc);
           toolCallMap.set(tc.id, tc);
@@ -162,7 +165,7 @@ export default function App() {
             return updated;
           });
         },
-        
+
         onToolStart: (toolCallId) => {
           const tc = toolCallMap.get(toolCallId);
           if (tc) {
@@ -170,7 +173,7 @@ export default function App() {
             setMessages(prev => [...prev]);
           }
         },
-        
+
         onToolResult: (toolCallId, output, error) => {
           const tc = toolCallMap.get(toolCallId);
           if (tc) {
@@ -179,34 +182,30 @@ export default function App() {
             setMessages(prev => [...prev]);
           }
         },
-        
+
         onToolApproval: async (tc) => {
-          // Set the tool call to waiting_approval
           const existing = toolCallMap.get(tc.id);
           if (existing) {
             existing.status = 'waiting_approval';
             existing.requiresApproval = true;
           }
           setMessages(prev => [...prev]);
-          
-          // Wait for user approval or denial
+
           return new Promise<boolean>((resolve) => {
-            // Store the resolve function so the UI can call it
-            window.__qwenApprovalResolvers = window.__qwenApprovalResolvers || {};
-            window.__qwenApprovalResolvers[tc.id] = resolve;
+            (window as any).__openCodeApprovalResolvers = (window as any).__openCodeApprovalResolvers || {};
+            (window as any).__openCodeApprovalResolvers[tc.id] = resolve;
           });
         },
-        
-        onDone: (apiMessages) => {
-          // Finalize the assistant message
+
+        onDone: () => {
           setMessages(prev => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
             if (last.role === 'assistant') {
-              updated[updated.length - 1] = { 
-                ...last, 
-                isStreaming: false, 
-                content: fullContent, 
+              updated[updated.length - 1] = {
+                ...last,
+                isStreaming: false,
+                content: fullContent,
                 toolCalls: [...toolCalls],
                 thinking: fullThinking || undefined,
               };
@@ -214,7 +213,7 @@ export default function App() {
             return updated;
           });
         },
-        
+
         onError: (error) => {
           fullContent += `\n\n**Error:** ${error}`;
           setMessages(prev => {
@@ -226,18 +225,18 @@ export default function App() {
             return updated;
           });
         },
-        
+
         shouldAbort: () => abortRef.current,
       });
-      
+
     } catch (err: any) {
       setMessages(prev => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last.role === 'assistant') {
-          updated[updated.length - 1] = { 
-            ...last, 
-            content: fullContent || `Error: ${err.message}`, 
+          updated[updated.length - 1] = {
+            ...last,
+            content: fullContent || `Error: ${err.message}`,
             isStreaming: false,
             toolCalls: [...toolCalls],
           };
@@ -250,21 +249,81 @@ export default function App() {
     }
   }, [config, messages, isGenerating]);
 
+  const handleSlashCommand = (command: string) => {
+    const cmd = command.toLowerCase().split(' ')[0];
+    switch (cmd) {
+      case '/compact': {
+        // Summarize conversation
+        const lastMsg = messages[messages.length - 1];
+        const summaryMsg: OpenCodeMessage = {
+          id: `msg_${Date.now()}`,
+          role: 'assistant',
+          content: `*Conversation compacted. ${messages.length} messages summarized.*`,
+          timestamp: Date.now(),
+        };
+        setMessages([summaryMsg]);
+        break;
+      }
+      case '/models': {
+        const provider = config.providers.find(p => p.id === config.activeProvider);
+        const modelList = provider?.models.map(m => `  ${m.id} - ${m.name}`).join('\n') || 'No models available';
+        const msg: OpenCodeMessage = {
+          id: `msg_${Date.now()}`,
+          role: 'assistant',
+          content: `**Available Models** (${provider?.name || 'Unknown'}):\n\`\`\`\n${modelList}\n\`\`\`\nCurrent: \`${config.activeModel}\``,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, {
+          id: `msg_${Date.now() - 1}`,
+          role: 'user',
+          content: command,
+          timestamp: Date.now() - 1,
+        }, msg]);
+        break;
+      }
+      case '/help': {
+        const helpMsg: OpenCodeMessage = {
+          id: `msg_${Date.now()}`,
+          role: 'assistant',
+          content: `**OpenCode Commands:**\n\n` +
+            `• \`/compact\` — Compact conversation to reduce context\n` +
+            `• \`/models\` — Show available models\n` +
+            `• \`/help\` — Show this help\n\n` +
+            `**Special Input:**\n` +
+            `• \`!command\` — Execute a shell command directly\n` +
+            `• \`@filename\` — Reference a file\n\n` +
+            `**Current Model:** \`${config.activeModel}\`\n` +
+            `**Provider:** ${activeProvider?.name || 'None'}`,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, {
+          id: `msg_${Date.now() - 1}`,
+          role: 'user',
+          content: command,
+          timestamp: Date.now() - 1,
+        }, helpMsg]);
+        break;
+      }
+      default: {
+        // Treat unknown commands as regular messages (pass to AI)
+        sendMessage(command);
+      }
+    }
+  };
+
   const approveToolCall = useCallback(async (msgId: string, toolCallId: string) => {
-    // Find and resolve the approval promise
-    const resolvers = (window as any).__qwenApprovalResolvers;
+    const resolvers = (window as any).__openCodeApprovalResolvers;
     if (resolvers && resolvers[toolCallId]) {
       resolvers[toolCallId](true);
       delete resolvers[toolCallId];
     }
-    
-    // Update the tool call status in the UI
+
     setMessages(prev => {
       const updated = prev.map(m => {
         if (m.id === msgId && m.toolCalls) {
           return {
             ...m,
-            toolCalls: m.toolCalls.map(tc => 
+            toolCalls: m.toolCalls.map(tc =>
               tc.id === toolCallId ? { ...tc, status: 'running' as const } : tc
             ),
           };
@@ -276,20 +335,18 @@ export default function App() {
   }, []);
 
   const denyToolCall = useCallback((msgId: string, toolCallId: string) => {
-    // Find and resolve the approval promise with false
-    const resolvers = (window as any).__qwenApprovalResolvers;
+    const resolvers = (window as any).__openCodeApprovalResolvers;
     if (resolvers && resolvers[toolCallId]) {
       resolvers[toolCallId](false);
       delete resolvers[toolCallId];
     }
-    
-    // Update the tool call status
+
     setMessages(prev => {
       const updated = prev.map(m => {
         if (m.id === msgId && m.toolCalls) {
           return {
             ...m,
-            toolCalls: m.toolCalls.map(tc => 
+            toolCalls: m.toolCalls.map(tc =>
               tc.id === toolCallId ? { ...tc, status: 'error' as const, output: 'Denied by user' } : tc
             ),
           };
@@ -302,7 +359,7 @@ export default function App() {
 
   const clearMessages = useCallback(() => {
     setMessages([]);
-    localStorage.removeItem('qwencode_messages');
+    localStorage.removeItem('opencode_messages');
   }, []);
 
   const stopGeneration = useCallback(() => {
@@ -310,17 +367,6 @@ export default function App() {
     setIsGenerating(false);
     setAgentState({ status: 'idle', currentStep: 0, totalSteps: 0 });
   }, []);
-
-  // Get status text for the agent state
-  const getAgentStatusText = () => {
-    switch (agentState.status) {
-      case 'thinking': return 'Pensando...';
-      case 'calling_tool': return `Llamando herramienta: ${agentState.currentTool || ''}`;
-      case 'executing': return `Ejecutando: ${agentState.currentTool || ''}`;
-      case 'waiting_approval': return 'Esperando aprobación...';
-      default: return '';
-    }
-  };
 
   return (
     <div style={{
@@ -331,7 +377,6 @@ export default function App() {
       overflow: 'hidden',
       position: 'relative',
     }}>
-      {/* Sidebar */}
       <Sidebar
         config={config}
         updateConfig={updateConfig}
@@ -342,8 +387,7 @@ export default function App() {
         onClear={clearMessages}
         messageCount={messages.length}
       />
-      
-      {/* Main Content */}
+
       <div style={{
         flex: 1,
         display: 'flex',
@@ -377,42 +421,45 @@ export default function App() {
           >
             ☰
           </button>
-          
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: 'var(--space-sm)',
             flex: 1,
           }}>
-            <div style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: hasApiKey ? 'var(--success)' : 'var(--error)',
-            }} />
+            <span style={{
+              color: 'var(--accent-green)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 14,
+              fontWeight: 700,
+            }}>
+              {'>'}_
+            </span>
             <span style={{
               fontSize: 13,
-              color: 'var(--text-secondary)',
-              fontWeight: 500,
+              color: 'var(--text-primary)',
+              fontWeight: 600,
             }}>
-              {activeProvider?.name || 'No Provider'} • {config.activeModel.split('/').pop()}
+              OpenCode
             </span>
-            {config.proxyEnabled && (
-              <span style={{
-                fontSize: 11,
-                color: 'var(--accent-secondary)',
-                background: 'rgba(107, 107, 255, 0.1)',
-                padding: '2px 8px',
-                borderRadius: 'var(--radius-full)',
-              }}>
-                Proxy
-              </span>
-            )}
+            <span style={{
+              fontSize: 11,
+              color: 'var(--text-tertiary)',
+            }}>
+              {config.activeModel.split('/').pop()}
+            </span>
+            <div style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: hasApiKey ? 'var(--accent-green)' : 'var(--error)',
+            }} />
             {agentState.status !== 'idle' && isGenerating && (
               <span style={{
                 fontSize: 11,
-                color: 'var(--warning)',
-                background: 'rgba(251, 191, 36, 0.1)',
+                color: 'var(--accent-purple)',
+                background: 'rgba(188, 140, 255, 0.1)',
                 padding: '2px 8px',
                 borderRadius: 'var(--radius-full)',
                 display: 'flex',
@@ -420,11 +467,12 @@ export default function App() {
                 gap: 4,
               }}>
                 <span style={{ animation: 'pulse 1s infinite' }}>●</span>
-                Paso {agentState.currentStep} — {getAgentStatusText()}
+                Step {agentState.currentStep}
+                {agentState.currentTool ? ` — ${agentState.currentTool}` : ''}
               </span>
             )}
           </div>
-          
+
           {isGenerating && (
             <button
               onClick={stopGeneration}
@@ -439,36 +487,40 @@ export default function App() {
                 fontWeight: 600,
               }}
             >
-              Detener
+              Stop
             </button>
           )}
+
+          <button
+            onClick={() => setView('settings')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: view === 'settings' ? 'var(--accent-green)' : 'var(--text-tertiary)',
+              cursor: 'pointer',
+              fontSize: 18,
+              padding: 'var(--space-sm)',
+            }}
+          >
+            ⚙
+          </button>
         </div>
-        
+
         {/* View Content */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          {view === 'chat' && (
-            messages.length === 0 ? (
-              <WelcomeScreen config={config} onSend={sendMessage} />
-            ) : (
-              <ChatView
-                messages={messages}
-                onSend={sendMessage}
-                isGenerating={isGenerating}
-                onApprove={approveToolCall}
-                onDeny={denyToolCall}
-                config={config}
-                agentState={agentState}
-              />
-            )
-          )}
-          {view === 'zai' && (
-            <ZAIBrowser config={config} updateConfig={updateConfig} />
+          {(view === 'chat') && (
+            <OpenCodeChat
+              messages={messages}
+              onSend={sendMessage}
+              isGenerating={isGenerating}
+              onApprove={approveToolCall}
+              onDeny={denyToolCall}
+              config={config}
+              agentState={agentState}
+            />
           )}
           {view === 'terminal' && (
             <TerminalView config={config} />
-          )}
-          {view === 'opencode' && (
-            <OpenCodeView config={config} />
           )}
           {view === 'files' && (
             <FileExplorer config={config} />
@@ -476,15 +528,17 @@ export default function App() {
           {view === 'settings' && (
             <SettingsView config={config} updateConfig={updateConfig} />
           )}
+          {view === 'opencode-setup' && (
+            <SettingsView config={config} updateConfig={updateConfig} initialTab="opencode" />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// Extend window type for approval resolvers
 declare global {
   interface Window {
-    __qwenApprovalResolvers?: Record<string, (approved: boolean) => void>;
+    __openCodeApprovalResolvers?: Record<string, (approved: boolean) => void>;
   }
 }

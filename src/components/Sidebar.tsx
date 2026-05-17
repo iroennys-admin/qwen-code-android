@@ -1,3 +1,7 @@
+// ==========================================
+// OpenCode Android - Sidebar
+// ==========================================
+
 import React from 'react';
 import type { AppConfig, ViewMode } from '../types';
 
@@ -14,14 +18,16 @@ interface SidebarProps {
 
 const NAV_ITEMS: Array<{ id: ViewMode; icon: string; label: string }> = [
   { id: 'chat', icon: '💬', label: 'Chat' },
-  { id: 'zai', icon: '🌐', label: 'Z.ai' },
   { id: 'terminal', icon: '💻', label: 'Terminal' },
-  { id: 'opencode', icon: '🤖', label: 'OpenCode' },
   { id: 'files', icon: '📁', label: 'Archivos' },
   { id: 'settings', icon: '⚙️', label: 'Config' },
 ];
 
 export default function Sidebar({ config, updateConfig, view, setView, open, onClose, onClear, messageCount }: SidebarProps) {
+  const activeProvider = config.providers.find(p => p.id === config.activeProvider);
+  const activeModel = config.activeModel.split('/').pop() || config.activeModel;
+  const isFree = activeProvider?.isFree || config.activeModel.includes('free');
+
   return (
     <>
       {/* Overlay */}
@@ -36,10 +42,9 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
           }}
         />
       )}
-      
+
       {/* Sidebar Panel */}
       <div
-        className="acrylic"
         style={{
           position: 'fixed',
           left: open ? 0 : -280,
@@ -50,6 +55,7 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
           transition: 'left var(--transition-normal)',
           display: 'flex',
           flexDirection: 'column',
+          background: 'var(--bg-secondary)',
           borderRight: '1px solid var(--border-primary)',
         }}
       >
@@ -63,29 +69,30 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
               width: 36,
               height: 36,
               borderRadius: 'var(--radius-md)',
-              background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary))',
+              background: 'linear-gradient(135deg, var(--accent-green), var(--accent-purple))',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: 700,
+              fontFamily: 'var(--font-mono)',
+              color: '#0d1117',
             }}>
-              Q
+              {'>'}_
             </div>
             <div>
-              <div style={{ fontWeight: 600, fontSize: 16 }}>Qwen Code</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI Agent v4.0</div>
+              <div style={{ fontWeight: 600, fontSize: 16 }}>OpenCode</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI Agent v1.0</div>
             </div>
           </div>
         </div>
-        
+
         {/* Navigation */}
         <div style={{ flex: 1, padding: 'var(--space-sm)' }}>
           {NAV_ITEMS.map(item => (
             <button
               key={item.id}
               onClick={() => { setView(item.id); onClose(); }}
-              className={view === item.id ? 'glow' : ''}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -95,12 +102,13 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
                 borderRadius: 'var(--radius-md)',
                 border: 'none',
                 background: view === item.id ? 'var(--bg-active)' : 'transparent',
-                color: view === item.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                color: view === item.id ? 'var(--accent-green)' : 'var(--text-secondary)',
                 cursor: 'pointer',
                 fontSize: 14,
                 fontWeight: view === item.id ? 600 : 400,
                 transition: 'all var(--transition-fast)',
                 textAlign: 'left',
+                fontFamily: 'var(--font-mono)',
               }}
             >
               <span style={{ fontSize: 18 }}>{item.icon}</span>
@@ -109,25 +117,26 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
                 <span style={{
                   marginLeft: 'auto',
                   fontSize: 11,
-                  background: 'var(--accent-primary)',
-                  color: 'white',
+                  background: 'var(--accent-green)',
+                  color: '#0d1117',
                   padding: '2px 8px',
                   borderRadius: 'var(--radius-full)',
+                  fontWeight: 600,
                 }}>
                   {messageCount}
                 </span>
               )}
             </button>
           ))}
-          
+
           {/* Divider */}
           <div style={{
             height: 1,
             background: 'var(--border-primary)',
             margin: 'var(--space-md) var(--space-sm)',
           }} />
-          
-          {/* Quick Actions */}
+
+          {/* Clear Chat */}
           <button
             onClick={() => { onClear(); onClose(); }}
             style={{
@@ -143,13 +152,14 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
               cursor: 'pointer',
               fontSize: 14,
               textAlign: 'left',
+              fontFamily: 'var(--font-mono)',
             }}
           >
             <span style={{ fontSize: 18 }}>🗑️</span>
             <span>Limpiar Chat</span>
           </button>
         </div>
-        
+
         {/* Provider Info */}
         <div style={{
           padding: 'var(--space-md)',
@@ -159,15 +169,34 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
             fontSize: 11,
             color: 'var(--text-tertiary)',
             marginBottom: 'var(--space-xs)',
+            fontFamily: 'var(--font-mono)',
           }}>
-            Proveedor Activo
+            Modelo Activo
           </div>
           <div style={{
             fontSize: 13,
-            color: 'var(--accent-secondary)',
+            color: 'var(--accent-green)',
             fontWeight: 500,
+            fontFamily: 'var(--font-mono)',
           }}>
-            {config.providers.find(p => p.id === config.activeProvider)?.name || 'Ninguno'}
+            {activeModel}
+          </div>
+          <div style={{
+            fontSize: 11,
+            color: isFree ? 'var(--accent-green)' : 'var(--accent-purple)',
+            marginTop: 2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-xs)',
+          }}>
+            <span style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: isFree ? 'var(--accent-green)' : 'var(--accent-purple)',
+              display: 'inline-block',
+            }} />
+            {isFree ? 'GRATUITO' : activeProvider?.name || 'Proveedor'}
           </div>
           <div style={{
             fontSize: 11,
@@ -181,10 +210,10 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: config.proxyEnabled ? 'var(--success)' : 'var(--warning)',
+              background: config.proxyEnabled ? 'var(--accent-green)' : 'var(--warning)',
               display: 'inline-block',
             }} />
-            {config.proxyEnabled ? 'Proxy: Activo' : 'Proxy: Inactivo'}
+            Proxy: {config.proxyEnabled ? 'Activo' : 'Inactivo'}
           </div>
         </div>
       </div>

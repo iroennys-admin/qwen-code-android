@@ -1,5 +1,6 @@
 #!/bin/bash
-# Setup Ubuntu inside proot
+# Setup Ubuntu Base inside proot for OpenCode
+# Uses Ubuntu Base (smaller than cloud images, optimized for 4GB RAM devices)
 set -e
 
 UBUNTU_ROOT="$1"
@@ -15,7 +16,7 @@ if [ -d "$UBUNTU_ROOT/bin" ]; then
     exit 0
 fi
 
-echo "Setting up Ubuntu environment..."
+echo "Setting up Ubuntu Base environment..."
 
 # Update and install essential packages
 "$PROOT" -0 -r "$UBUNTU_ROOT" -b /dev -b /proc -b /sys /bin/bash -c "
@@ -26,4 +27,4 @@ echo "Setting up Ubuntu environment..."
     echo 'export LANG=en_US.UTF-8' >> /root/.bashrc
 "
 
-echo "Ubuntu setup complete"
+echo "Ubuntu Base setup complete"

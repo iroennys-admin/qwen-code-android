@@ -1,635 +1,557 @@
+// ==========================================
+// OpenCode Android - Settings View
+// ==========================================
+
 import React, { useState } from 'react';
-import type { AppConfig, Provider } from '../types';
-import { DEFAULT_PROVIDERS } from '../utils/config';
-import { testApiKey, fetchModels } from '../services/api';
+import type { AppConfig, Provider, ModelInfo } from '../types';
 
 interface SettingsViewProps {
   config: AppConfig;
   updateConfig: (updates: Partial<AppConfig>) => void;
+  initialTab?: string;
 }
 
-export default function SettingsView({ config, updateConfig }: SettingsViewProps) {
-  const [testing, setTesting] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<Record<string, { success: boolean; msg: string }>>({});
-  const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'proxy' | 'about'>('providers');
-  
-  const testProvider = async (providerId: string) => {
-    setTesting(providerId);
-    const prevProvider = config.activeProvider;
-    updateConfig({ activeProvider: providerId });
-    
-    const result = await testApiKey(config);
-    setTestResult(prev => ({
-      ...prev,
-      [providerId]: {
-        success: result.success,
-        msg: result.success ? `${result.modelCount} modelos disponibles` : result.error || 'Error',
-      },
-    }));
-    
-    updateConfig({ activeProvider: prevProvider });
-    setTesting(null);
-  };
-  
-  const updateProvider = (id: string, updates: Partial<Provider>) => {
-    const providers = config.providers.map(p => 
-      p.id === id ? { ...p, ...updates } : p
-    );
-    updateConfig({ providers });
-  };
-  
-  const tabs = [
-    { id: 'providers' as const, label: '🔑 Proveedores', },
-    { id: 'general' as const, label: '⚙️ General', },
-    { id: 'proxy' as const, label: '🌐 Proxy', },
-    { id: 'about' as const, label: 'ℹ️ Acerca de', },
+type SettingsTab = 'provider' | 'agent' | 'proxy' | 'about';
+
+export default function SettingsView({ config, updateConfig, initialTab }: SettingsViewProps) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab === 'opencode' ? 'provider' : 'provider');
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ provider: string; success: boolean; message: string } | null>(null);
+
+  const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
+    { id: 'provider', label: 'Proveedor', icon: '🔑' },
+    { id: 'agent', label: 'Agente', icon: '🤖' },
+    { id: 'proxy', label: 'Proxy', icon: '🌐' },
+    { id: 'about', label: 'Acerca', icon: 'ℹ️' },
   ];
-  
+
+  const testProvider = async (provider: Provider) => {
+    setTestingProvider(provider.id);
+    setTestResult(null);
+    try {
+      const baseUrl = config.proxyEnabled && provider.proxyBaseUrl
+        ? provider.proxyBaseUrl
+        : provider.baseUrl;
+      const apiKey = provider.apiKey || 'public';
+
+      const resp = await fetch(`${baseUrl}/models`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+
+      if (resp.ok) {
+        setTestResult({ provider: provider.id, success: true, message: 'Conexión exitosa!' });
+      } else {
+        setTestResult({ provider: provider.id, success: false, message: `Error ${resp.status}` });
+      }
+    } catch (err: any) {
+      setTestResult({ provider: provider.id, success: false, message: err.message });
+    } finally {
+      setTestingProvider(null);
+    }
+  };
+
   return (
     <div style={{
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden',
+      background: 'var(--bg-primary)',
     }}>
       {/* Tab Bar */}
       <div style={{
         display: 'flex',
-        gap: 'var(--space-xs)',
-        padding: 'var(--space-sm) var(--space-md)',
         borderBottom: '1px solid var(--border-primary)',
-        background: 'var(--bg-secondary)',
         overflow: 'auto',
       }}>
-        {tabs.map(tab => (
+        {tabs.map(t => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            key={t.id}
+            onClick={() => setTab(t.id)}
             style={{
-              padding: '8px var(--space-md)',
-              background: activeTab === tab.id ? 'var(--bg-active)' : 'transparent',
-              border: activeTab === tab.id ? '1px solid var(--border-active)' : '1px solid transparent',
-              borderRadius: 'var(--radius-sm)',
-              color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+              flex: 1,
+              padding: '10px 8px',
+              border: 'none',
+              borderBottom: tab === t.id ? '2px solid var(--accent-green)' : '2px solid transparent',
+              background: 'transparent',
+              color: tab === t.id ? 'var(--accent-green)' : 'var(--text-secondary)',
               cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: activeTab === tab.id ? 600 : 400,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      
-      {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-md)' }}>
-        {activeTab === 'providers' && (
-          <ProvidersTab
-            config={config}
-            updateProvider={updateProvider}
-            updateConfig={updateConfig}
-            testing={testing}
-            testResult={testResult}
-            onTest={testProvider}
-          />
-        )}
-        {activeTab === 'general' && <GeneralTab config={config} updateConfig={updateConfig} />}
-        {activeTab === 'proxy' && <ProxyTab config={config} updateConfig={updateConfig} />}
-        {activeTab === 'about' && <AboutTab />}
-      </div>
-    </div>
-  );
-}
-
-function ProvidersTab({ config, updateProvider, updateConfig, testing, testResult, onTest }: any) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-      <h3 style={{ color: 'var(--text-primary)', fontSize: 16 }}>Proveedores de API</h3>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-        Configura tus API keys para cada proveedor. El proxy para Cuba está habilitado por defecto.
-      </p>
-      
-      {config.providers.map((provider: Provider) => (
-        <div key={provider.id} style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-primary)',
-          borderRadius: 'var(--radius-md)',
-          overflow: 'hidden',
-        }}>
-          {/* Provider Header */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-sm)',
-            padding: 'var(--space-md)',
-            borderBottom: '1px solid var(--border-secondary)',
-          }}>
-            <div style={{
-              width: 32,
-              height: 32,
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--bg-tertiary)',
+              fontSize: 12,
+              fontWeight: tab === t.id ? 600 : 400,
+              fontFamily: 'var(--font-mono)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 14,
-              fontWeight: 700,
-              color: 'var(--accent-secondary)',
-            }}>
-              {provider.name[0]}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{provider.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                {provider.models.length} modelos
-              </div>
-            </div>
-            <label style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-xs)',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}>
-              <input
-                type="radio"
-                name="activeProvider"
-                checked={config.activeProvider === provider.id}
-                onChange={() => updateConfig({ activeProvider: provider.id })}
-                style={{ accentColor: 'var(--accent-primary)' }}
-              />
-              Activo
-            </label>
-          </div>
-          
-          {/* API Key */}
-          <div style={{ padding: 'var(--space-md)' }}>
-            <label style={{
-              display: 'block',
-              fontSize: 12,
-              color: 'var(--text-tertiary)',
-              marginBottom: 'var(--space-xs)',
-            }}>
-              API Key
-            </label>
-            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-              <input
-                type="password"
-                value={provider.apiKey}
-                onChange={(e) => updateProvider(provider.id, { apiKey: e.target.value })}
-                placeholder={`Ingresa tu ${provider.name} API key`}
-                style={{
-                  flex: 1,
-                  padding: '8px var(--space-md)',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontSize: 13,
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                }}
-              />
-              <button
-                onClick={() => onTest(provider.id)}
-                disabled={testing === provider.id}
-                style={{
-                  padding: '8px var(--space-md)',
-                  background: provider.apiKey || provider.id === 'opencode' ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  color: provider.apiKey || provider.id === 'opencode' ? 'white' : 'var(--text-tertiary)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                {testing === provider.id ? '...' : 'Test'}
-              </button>
-            </div>
-            
-            {testResult[provider.id] && (
-              <div style={{
-                marginTop: 'var(--space-sm)',
-                fontSize: 12,
-                color: testResult[provider.id].success ? 'var(--success)' : 'var(--error)',
-                padding: '6px var(--space-sm)',
-                background: testResult[provider.id].success ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                borderRadius: 'var(--radius-sm)',
-              }}>
-                {testResult[provider.id].success ? '✓' : '✗'} {testResult[provider.id].msg}
-              </div>
-            )}
-          </div>
-          
-          {/* Model Selection */}
-          {config.activeProvider === provider.id && (
-            <div style={{ padding: '0 var(--space-md) var(--space-md)' }}>
-              <label style={{
-                display: 'block',
-                fontSize: 12,
-                color: 'var(--text-tertiary)',
-                marginBottom: 'var(--space-xs)',
-              }}>
-                Modelo
-              </label>
-              <select
-                value={config.activeModel}
-                onChange={(e) => updateConfig({ activeModel: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px var(--space-md)',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontSize: 13,
-                  outline: 'none',
-                }}
-              >
-                {provider.models.map((m: any) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} {m.contextLength ? `(${(m.contextLength / 1024).toFixed(0)}K)` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function GeneralTab({ config, updateConfig }: { config: AppConfig; updateConfig: (u: Partial<AppConfig>) => void }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-      <h3 style={{ color: 'var(--text-primary)', fontSize: 16 }}>Configuración General</h3>
-      
-      {/* Temperature */}
-      <SettingRow label="Temperatura" description="Controla la creatividad de las respuestas (0.0 - 2.0)">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <input
-            type="range"
-            min="0"
-            max="2"
-            step="0.1"
-            value={config.temperature}
-            onChange={(e) => updateConfig({ temperature: parseFloat(e.target.value) })}
-            style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
-          />
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', width: 40 }}>
-            {config.temperature.toFixed(1)}
-          </span>
-        </div>
-      </SettingRow>
-      
-      {/* Max Tokens */}
-      <SettingRow label="Max Tokens" description="Longitud máxima de la respuesta">
-        <select
-          value={config.maxTokens}
-          onChange={(e) => updateConfig({ maxTokens: parseInt(e.target.value) })}
-          style={{
-            padding: '8px var(--space-md)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)',
-            fontSize: 13,
-            outline: 'none',
-          }}
-        >
-          <option value={2048}>2K</option>
-          <option value={4096}>4K</option>
-          <option value={8192}>8K</option>
-          <option value={16384}>16K</option>
-          <option value={32768}>32K</option>
-        </select>
-      </SettingRow>
-      
-      {/* Streaming */}
-      <SettingRow label="Streaming" description="Mostrar respuestas en tiempo real">
-        <Toggle checked={config.streaming} onChange={(v) => updateConfig({ streaming: v })} />
-      </SettingRow>
-      
-      {/* Approval Mode */}
-      <SettingRow label="Modo de aprobacion" description="Como manejar la ejecucion de herramientas">
-        <select
-          value={config.approvalMode}
-          onChange={(e) => updateConfig({ approvalMode: e.target.value as any })}
-          style={{
-            padding: '8px var(--space-md)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)',
-            fontSize: 13,
-            outline: 'none',
-          }}
-        >
-          <option value="ask">Preguntar siempre</option>
-          <option value="auto_edit">Auto-editar (pedir para shell)</option>
-          <option value="yolo">YOLO (auto-todo)</option>
-        </select>
-      </SettingRow>
-      
-      {/* Max Agent Steps */}
-      <SettingRow label="Max pasos del agente" description="Limite de iteraciones del loop agentic (prevenir loops infinitos)">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <input
-            type="range"
-            min="5"
-            max="50"
-            step="5"
-            value={config.maxAgentSteps || 25}
-            onChange={(e) => updateConfig({ maxAgentSteps: parseInt(e.target.value) })}
-            style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
-          />
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', width: 30 }}>
-            {config.maxAgentSteps || 25}
-          </span>
-        </div>
-      </SettingRow>
-      
-      {/* Font Size */}
-      <SettingRow label="Tamaño de fuente" description="Tamaño del texto en el chat">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <input
-            type="range"
-            min="12"
-            max="20"
-            step="1"
-            value={config.fontSize}
-            onChange={(e) => updateConfig({ fontSize: parseInt(e.target.value) })}
-            style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
-          />
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', width: 30 }}>
-            {config.fontSize}
-          </span>
-        </div>
-      </SettingRow>
-      
-      {/* Low RAM Mode */}
-      <SettingRow label="Modo bajo RAM" description="Reduce el uso de memoria en dispositivos con poca RAM">
-        <Toggle checked={config.lowRamMode} onChange={(v) => updateConfig({ lowRamMode: v })} />
-      </SettingRow>
-      
-      {/* System Prompt */}
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: 'var(--radius-md)',
-        padding: 'var(--space-md)',
-      }}>
-        <label style={{
-          display: 'block',
-          fontSize: 13,
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          marginBottom: 'var(--space-xs)',
-        }}>
-          System Prompt
-        </label>
-        <textarea
-          value={config.systemPrompt}
-          onChange={(e) => updateConfig({ systemPrompt: e.target.value })}
-          rows={6}
-          style={{
-            width: '100%',
-            padding: '8px var(--space-md)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)',
-            fontSize: 12,
-            fontFamily: 'var(--font-mono)',
-            outline: 'none',
-            resize: 'vertical',
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ProxyTab({ config, updateConfig }: { config: AppConfig; updateConfig: (u: Partial<AppConfig>) => void }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-      <h3 style={{ color: 'var(--text-primary)', fontSize: 16 }}>Configuración de Proxy</h3>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-        El proxy permite conectarte a las APIs desde Cuba, redirigiendo el tráfico a través de un servidor intermedio.
-      </p>
-      
-      <SettingRow label="Proxy habilitado" description="Activar proxy para todas las conexiones API">
-        <Toggle checked={config.proxyEnabled} onChange={(v) => updateConfig({ proxyEnabled: v })} />
-      </SettingRow>
-      
-      <SettingRow label="URL del Proxy" description="Servidor proxy base URL">
-        <input
-          type="text"
-          value={config.proxyBaseUrl}
-          onChange={(e) => updateConfig({ proxyBaseUrl: e.target.value })}
-          style={{
-            width: '100%',
-            padding: '8px var(--space-md)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--accent-secondary)',
-            fontSize: 13,
-            fontFamily: 'var(--font-mono)',
-            outline: 'none',
-          }}
-        />
-      </SettingRow>
-      
-      {/* Proxy URLs per provider */}
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: 'var(--radius-md)',
-        overflow: 'hidden',
-      }}>
-        <div style={{
-          padding: 'var(--space-md)',
-          borderBottom: '1px solid var(--border-secondary)',
-          fontWeight: 600,
-          fontSize: 13,
-        }}>
-          URLs de Proxy por Proveedor
-        </div>
-        {config.providers.map((p: Provider) => (
-          <div key={p.id} style={{
-            padding: 'var(--space-sm) var(--space-md)',
-            borderBottom: '1px solid var(--border-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-sm)',
-            fontSize: 12,
-          }}>
-            <span style={{ color: 'var(--text-secondary)', width: 80, flexShrink: 0 }}>{p.name}:</span>
-            <span style={{ color: 'var(--accent-secondary)', fontFamily: 'var(--font-mono)' }}>
-              {p.proxyBaseUrl}
-            </span>
-          </div>
+              gap: 4,
+            }}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
         ))}
       </div>
-      
-      <div style={{
-        background: 'rgba(107, 107, 255, 0.05)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: 'var(--radius-md)',
-        padding: 'var(--space-md)',
-      }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-secondary)', marginBottom: 'var(--space-xs)' }}>
-          🇨🇺 Información para Cuba
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          El proxy iql está configurado por defecto para permitir el acceso a las APIs desde Cuba.
-          Esto redirige todas las peticiones a través de un servidor que no tiene restricciones geográficas.
-          Si experimentas problemas, verifica que el proxy esté habilitado y que la URL sea correcta.
-        </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-md)' }}>
+        {tab === 'provider' && <ProviderTab config={config} updateConfig={updateConfig} testingProvider={testingProvider} testResult={testResult} testProvider={testProvider} />}
+        {tab === 'agent' && <AgentTab config={config} updateConfig={updateConfig} />}
+        {tab === 'proxy' && <ProxyTab config={config} updateConfig={updateConfig} />}
+        {tab === 'about' && <AboutTab />}
       </div>
     </div>
   );
 }
 
-function AboutTab() {
+// ---- Provider Tab ----
+function ProviderTab({ config, updateConfig, testingProvider, testResult, testProvider }: any) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', alignItems: 'center', padding: 'var(--space-xl)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      {config.providers.map((provider: Provider) => {
+        const isActive = config.activeProvider === provider.id;
+        const currentModel = isActive ? config.activeModel : provider.models[0]?.id;
+
+        return (
+          <div key={provider.id} style={{
+            border: `1px solid ${isActive ? 'var(--accent-green)' : 'var(--border-primary)'}`,
+            borderRadius: 'var(--radius-md)',
+            overflow: 'hidden',
+            background: isActive ? 'rgba(126, 231, 135, 0.03)' : 'transparent',
+          }}>
+            {/* Provider Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-sm)',
+              padding: '12px 16px',
+              borderBottom: '1px solid var(--border-primary)',
+            }}>
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: isActive ? 'var(--accent-green)' : 'var(--text-tertiary)',
+              }} />
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 14,
+                fontWeight: 600,
+                color: isActive ? 'var(--accent-green)' : 'var(--text-primary)',
+                flex: 1,
+              }}>
+                {provider.name}
+              </span>
+              {provider.isFree && (
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  background: 'rgba(126, 231, 135, 0.15)',
+                  color: 'var(--accent-green)',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: 600,
+                }}>
+                  GRATUITO
+                </span>
+              )}
+              {!isActive && (
+                <button
+                  onClick={() => updateConfig({ activeProvider: provider.id, activeModel: provider.models[0]?.id || '' })}
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    background: 'rgba(126, 231, 135, 0.1)',
+                    border: '1px solid rgba(126, 231, 135, 0.2)',
+                    color: 'var(--accent-green)',
+                    padding: '4px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Activar
+                </button>
+              )}
+            </div>
+
+            {/* Provider Body */}
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* API Key (hidden for free providers) */}
+              {!provider.isFree && (
+                <div>
+                  <label style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    display: 'block',
+                    marginBottom: 4,
+                  }}>
+                    API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={provider.apiKey}
+                    onChange={e => {
+                      const newProviders = config.providers.map((p: Provider) =>
+                        p.id === provider.id ? { ...p, apiKey: e.target.value } : p
+                      );
+                      updateConfig({ providers: newProviders });
+                    }}
+                    placeholder="sk-..."
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Model Selector */}
+              {isActive && (
+                <div>
+                  <label style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    display: 'block',
+                    marginBottom: 4,
+                  }}>
+                    Modelo
+                  </label>
+                  <select
+                    value={config.activeModel}
+                    onChange={e => updateConfig({ activeModel: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    {provider.models.map((m: ModelInfo) => (
+                      <option key={m.id} value={m.id} style={{ background: '#1a1a2e' }}>
+                        {m.name} {m.isFree ? '(GRATUITO)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Test Button */}
+              <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+                <button
+                  onClick={() => testProvider(provider)}
+                  disabled={testingProvider === provider.id}
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    background: 'rgba(188, 140, 255, 0.1)',
+                    border: '1px solid rgba(188, 140, 255, 0.2)',
+                    color: 'var(--accent-purple)',
+                    padding: '4px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: testingProvider === provider.id ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {testingProvider === provider.id ? 'Probando...' : 'Test'}
+                </button>
+                {testResult?.provider === provider.id && (
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: testResult.success ? 'var(--accent-green)' : 'var(--error)',
+                  }}>
+                    {testResult.message}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---- Agent Tab ----
+function AgentTab({ config, updateConfig }: any) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      {/* Temperature */}
+      <SettingRow label="Temperatura" value={String(config.temperature)}>
+        <input
+          type="range"
+          min="0"
+          max="2"
+          step="0.1"
+          value={config.temperature}
+          onChange={e => updateConfig({ temperature: parseFloat(e.target.value) })}
+          style={{ flex: 1 }}
+        />
+      </SettingRow>
+
+      {/* Max Tokens */}
+      <SettingRow label="Max Tokens" value={String(config.maxTokens)}>
+        <input
+          type="number"
+          value={config.maxTokens}
+          onChange={e => updateConfig({ maxTokens: parseInt(e.target.value) || 4096 })}
+          min={256}
+          max={128000}
+          style={{
+            width: '100%',
+            padding: '6px 10px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </SettingRow>
+
+      {/* Max Agent Steps */}
+      <SettingRow label="Max Pasos Agente" value={String(config.maxAgentSteps)}>
+        <input
+          type="number"
+          value={config.maxAgentSteps}
+          onChange={e => updateConfig({ maxAgentSteps: parseInt(e.target.value) || 30 })}
+          min={5}
+          max={100}
+          style={{
+            width: '100%',
+            padding: '6px 10px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </SettingRow>
+
+      {/* Approval Mode */}
+      <SettingRow label="Modo Aprobación" value={config.approvalMode}>
+        <select
+          value={config.approvalMode}
+          onChange={e => updateConfig({ approvalMode: e.target.value })}
+          style={{
+            width: '100%',
+            padding: '6px 10px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        >
+          <option value="ask" style={{ background: '#1a1a2e' }}>Preguntar siempre</option>
+          <option value="auto_edit" style={{ background: '#1a1a2e' }}>Auto (preguntar shell)</option>
+          <option value="yolo" style={{ background: '#1a1a2e' }}>Auto todo (YOLO)</option>
+        </select>
+      </SettingRow>
+
+      {/* Streaming */}
+      <SettingRow label="Streaming" value={config.streaming ? 'Sí' : 'No'}>
+        <button
+          onClick={() => updateConfig({ streaming: !config.streaming })}
+          style={{
+            width: 48,
+            height: 26,
+            borderRadius: 13,
+            border: 'none',
+            background: config.streaming ? 'var(--accent-green)' : 'rgba(255,255,255,0.1)',
+            cursor: 'pointer',
+            position: 'relative',
+            transition: 'background 0.2s',
+          }}
+        >
+          <div style={{
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            background: 'white',
+            position: 'absolute',
+            top: 3,
+            left: config.streaming ? 25 : 3,
+            transition: 'left 0.2s',
+          }} />
+        </button>
+      </SettingRow>
+    </div>
+  );
+}
+
+// ---- Proxy Tab ----
+function ProxyTab({ config, updateConfig }: any) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
       <div style={{
-        width: 80,
-        height: 80,
-        borderRadius: 'var(--radius-xl)',
-        background: 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 36,
-        fontWeight: 700,
-        boxShadow: '0 0 40px rgba(107, 107, 255, 0.3)',
-      }}>
-        Q
-      </div>
-      
-      <h2 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700 }}>Qwen Code</h2>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v3.3.0 — OpenCode Zen FREE + Full Device Control</p>
-      
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-primary)',
+        padding: '12px 16px',
+        background: 'rgba(126, 231, 135, 0.05)',
+        border: '1px solid rgba(126, 231, 135, 0.1)',
         borderRadius: 'var(--radius-md)',
-        padding: 'var(--space-lg)',
-        maxWidth: 400,
-        width: '100%',
-        fontSize: 13,
-        color: 'var(--text-secondary)',
-        lineHeight: 1.8,
-      }}>
-        <div>🤖 DeepSeek V4 / GLM-5.1 / 28 herramientas</div>
-        <div>🆓 OpenCode Zen - 5 modelos GRATUITOS (sin API key)</div>
-        <div>⚡ Ejecucion de codigo (Python, JS, Bash)</div>
-        <div>💻 Comandos shell completos</div>
-        <div>📁 Acceso completo al sistema de archivos</div>
-        <div>📱 WhatsApp, SMS, llamadas, contactos</div>
-        <div>🖱️ UI Automation (Accessibility Service)</div>
-        <div>🔔 Lectura de notificaciones</div>
-        <div>🔍 Busqueda web y scraping</div>
-        <div>🌐 Soporte de proxy para Cuba</div>
-        <div>📦 NPX skill installation</div>
-        <div>🏗️ Compatible 32/64 bits</div>
-      </div>
-      
-      <div style={{
-        background: 'rgba(74, 222, 128, 0.05)',
-        border: '1px solid rgba(74, 222, 128, 0.2)',
-        borderRadius: 'var(--radius-md)',
-        padding: 'var(--space-md)',
-        maxWidth: 400,
-        width: '100%',
+        fontFamily: 'var(--font-mono)',
         fontSize: 12,
         color: 'var(--text-secondary)',
         lineHeight: 1.6,
       }}>
-        <div style={{ fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>
-          🆓 Modelos GRATUITOS con OpenCode Zen:
-        </div>
-        <div>✅ DeepSeek V4 Flash Free - razonamiento + tool call</div>
-        <div>✅ Qwen3.6 Plus Free - Alibaba Qwen3.6</div>
-        <div>✅ Big Pickle - modelo custom de OpenCode</div>
-        <div>✅ MiniMax M2.5 Free</div>
-        <div>✅ Nemotron 3 Super Free - NVIDIA</div>
-        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
-          Sin API key, sin registro, sin tarjeta de credito. Solo abre la app y chatea.
-        </div>
-        <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--accent-secondary)' }}>
-          Para modelos premium (GLM-5.1, GPT-5, Claude):
-        </div>
-        <div>1. Obtén un OPENCODE_API_KEY en opencode.ai/zen</div>
-        <div>2. O usa otras API keys (NVIDIA, Z.ai, OpenRouter)</div>
+        El proxy permite acceder a las APIs de IA desde Cuba y otros países con restricciones. Activa el proxy si tienes problemas de conexión.
       </div>
-      
+
+      <SettingRow label="Proxy" value={config.proxyEnabled ? 'Activo' : 'Inactivo'}>
+        <button
+          onClick={() => updateConfig({ proxyEnabled: !config.proxyEnabled })}
+          style={{
+            width: 48,
+            height: 26,
+            borderRadius: 13,
+            border: 'none',
+            background: config.proxyEnabled ? 'var(--accent-green)' : 'rgba(255,255,255,0.1)',
+            cursor: 'pointer',
+            position: 'relative',
+            transition: 'background 0.2s',
+          }}
+        >
+          <div style={{
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            background: 'white',
+            position: 'absolute',
+            top: 3,
+            left: config.proxyEnabled ? 25 : 3,
+            transition: 'left 0.2s',
+          }} />
+        </button>
+      </SettingRow>
+
+      <SettingRow label="URL Base" value={config.proxyBaseUrl}>
+        <input
+          value={config.proxyBaseUrl}
+          onChange={e => updateConfig({ proxyBaseUrl: e.target.value })}
+          style={{
+            width: '100%',
+            padding: '6px 10px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </SettingRow>
+    </div>
+  );
+}
+
+// ---- About Tab ----
+function AboutTab() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+      <div style={{ textAlign: 'center', padding: 'var(--space-xl) 0' }}>
+        <div style={{
+          fontSize: 36,
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--accent-green)',
+          fontWeight: 700,
+        }}>
+          {'>'}_
+        </div>
+        <div style={{
+          fontSize: 20,
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          marginTop: 'var(--space-sm)',
+        }}>
+          OpenCode
+        </div>
+        <div style={{
+          fontSize: 12,
+          color: 'var(--text-tertiary)',
+          fontFamily: 'var(--font-mono)',
+        }}>
+          AI Coding Agent for Android v1.0
+        </div>
+      </div>
+
       <div style={{
-        fontSize: 11,
-        color: 'var(--text-tertiary)',
-        textAlign: 'center',
-        marginTop: 'var(--space-md)',
+        padding: '12px 16px',
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid var(--border-primary)',
+        borderRadius: 'var(--radius-md)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 12,
+        lineHeight: 1.8,
+        color: 'var(--text-secondary)',
       }}>
-        Inspirado en Qwen Code (QwenLM)
-        <br />
-        Hecho con ❤️ para Cuba
-      </div>
-    </div>
-  );
-}
-
-function SettingRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
-  return (
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-primary)',
-      borderRadius: 'var(--radius-md)',
-      padding: 'var(--space-md)',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-md)' }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{label}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{description}</div>
+        <div style={{ color: 'var(--accent-green)', fontWeight: 600, marginBottom: 4 }}>Modelos Gratuitos:</div>
+        <div>• DeepSeek V4 Flash Free — razonamiento + tool calling</div>
+        <div>• Big Pickle — modelo personalizado OpenCode</div>
+        <div>• MiniMax M2.5 Free — razonamiento</div>
+        <div>• Nemotron 3 Super Free — NVIDIA razonamiento</div>
+        <div style={{ marginTop: 8, color: 'var(--accent-purple)', fontWeight: 600 }}>Herramientas:</div>
+        <div>• shell, file_read, file_write, file_edit</div>
+        <div>• glob, grep, list_dir, web_fetch</div>
+        <div>• mkdir, rm, mv, cp</div>
+        <div style={{ marginTop: 8, color: 'var(--text-tertiary)' }}>
+          Basado en OpenCode (opencode.ai) — 75+ proveedores de IA
         </div>
-        {children}
       </div>
     </div>
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+// ---- Setting Row ----
+function SettingRow({ label, value, children }: { label: string; value: string; children: React.ReactNode }) {
   return (
-    <div
-      onClick={() => onChange(!checked)}
-      style={{
-        width: 44,
-        height: 24,
-        borderRadius: 12,
-        background: checked ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-        cursor: 'pointer',
-        position: 'relative',
-        transition: 'background var(--transition-fast)',
-        flexShrink: 0,
-      }}
-    >
+    <div>
       <div style={{
-        width: 18,
-        height: 18,
-        borderRadius: '50%',
-        background: 'white',
-        position: 'absolute',
-        top: 3,
-        left: checked ? 23 : 3,
-        transition: 'left var(--transition-fast)',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-      }} />
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+      }}>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+          color: 'var(--text-secondary)',
+          fontWeight: 500,
+        }}>
+          {label}
+        </span>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          color: 'var(--text-tertiary)',
+        }}>
+          {value}
+        </span>
+      </div>
+      {children}
     </div>
   );
 }

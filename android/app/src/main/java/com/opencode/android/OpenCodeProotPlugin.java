@@ -1,4 +1,4 @@
-package com.qwen.code.android;
+package com.opencode.android;
 
 import android.os.Build;
 import android.os.Handler;
@@ -37,10 +37,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The proot approach provides a chroot-like environment without requiring root access,
  * allowing us to run a full Linux distribution (Ubuntu) and OpenCode on any Android device.
  */
-@CapacitorPlugin(name = "OpenCodeBridge")
-public class OpenCodeBridgePlugin extends Plugin {
+@CapacitorPlugin(name = "OpenCodeProot")
+public class OpenCodeProotPlugin extends Plugin {
 
-    private static final String TAG = "OpenCodeBridge";
+    private static final String TAG = "OpenCodeProot";
 
     // Paths relative to app files directory
     private String filesDir;
@@ -210,13 +210,15 @@ public class OpenCodeBridgePlugin extends Plugin {
                 emitProgress("proot", "Downloading proot binary for " + deviceArch + "...", 30);
 
                 // Try downloading proot from multiple sources
+                // proot binaries come as tar.gz archives (e.g., root/bin/proot)
                 boolean downloaded = false;
                 String[] prootUrls = getProotDownloadUrls();
+                String prootTarPath = filesDir + "/proot-download.tar.gz";
 
                 for (String url : prootUrls) {
                     try {
                         emitProgress("proot", "Trying download from " + url + "...", 40);
-                        downloadFile(url, prootPath);
+                        downloadFile(url, prootTarPath);
                         downloaded = true;
                         break;
                     } catch (Exception e) {
@@ -224,9 +226,17 @@ public class OpenCodeBridgePlugin extends Plugin {
                     }
                 }
 
-                // If download failed, try extracting from assets
+                // Extract proot from the downloaded tar.gz archive
+                if (downloaded) {
+                    emitProgress("proot", "Extracting proot from archive...", 60);
+                    downloaded = extractProotFromArchive(prootTarPath);
+                    // Clean up downloaded tarball
+                    new File(prootTarPath).delete();
+                }
+
+                // If download/extract failed, try extracting from assets
                 if (!downloaded) {
-                    emitProgress("proot", "Trying bundled proot from assets...", 50);
+                    emitProgress("proot", "Trying bundled proot from assets...", 70);
                     downloaded = extractProotFromAssets();
                 }
 
@@ -282,14 +292,47 @@ public class OpenCodeBridgePlugin extends Plugin {
 
     /**
      * Get download URLs for the proot binary, ordered by reliability.
+     *
+     * Sources for Android-compatible proot binaries:
+     * 1. green-green-avk/build-proot-android - statically linked, relocatable, best for Android
+     *    Provides: proot-android-armv7a.tar.gz (32-bit), proot-android-aarch64.tar.gz (64-bit)
+     * 2. Bundled in APK assets as fallback
+     *
+     * NOTE: The nicm/proot GitHub releases do NOT contain Android-specific binaries.
+     * Bintray is defunct. Do NOT use those URLs.
+     *
+     * For 32-bit ARM (armeabi-v7a), the green-green-avk binary is the only reliable
+     * pre-built option. It must be compiled with -marm (not -mthumb) to avoid the
+     * r7 register conflict segfault (see termux/proot issue #1).
      */
     private String[] getProotDownloadUrls() {
-        // Termux-compiled proot binaries are the most reliable for Android
-        String arch = deviceArch;
+        String prootArch = getProotArch();
         return new String[]{
-            "https://github.com/nicm/proot/releases/download/v5.4.0/proot-v5.4.0-" + arch + ".tar.gz",
-            "https://bintray.com/nicm/proot/download_file?file_path=proot-v5.4.0-" + arch + ".tar.gz",
+            // green-green-avk: Android-specific builds, statically linked with libtalloc
+            // Archives contain root/bin/proot and root/bin/proot-userland
+            "https://github.com/green-green-avk/build-proot-android/raw/master/packages/proot-android-" + prootArch + ".tar.gz",
+            // skirsten: CI-built portable proot binaries based on Termux proot package
+            "https://github.com/skirsten/proot-portable-android-binaries/releases/latest/download/proot-" + prootArch + ".tar.gz",
         };
+    }
+
+    /**
+     * Map device architecture to proot binary architecture naming.
+     * green-green-avk uses: armv7a, aarch64, i686, x86_64
+     */
+    private String getProotArch() {
+        switch (deviceArch) {
+            case "arm64":
+                return "aarch64";
+            case "arm":
+                return "armv7a";  // 32-bit ARM with hard-float
+            case "x86_64":
+                return "x86_64";
+            case "x86":
+                return "i686";
+            default:
+                return "aarch64";
+        }
     }
 
     /**
@@ -313,6 +356,184 @@ public class OpenCodeBridgePlugin extends Plugin {
             Log.w(TAG, "No bundled proot in assets: " + e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Extract proot binary from a downloaded tar.gz archive.
+     *
+     * green-green-avk archives contain: root/bin/proot, root/bin/proot-userland
+     * skirsten archives contain: proot (at top level or in bin/)
+     *
+     * This method searches for the proot binary in the archive and extracts it
+     * to the expected prootPath location.
+     */
+    private boolean extractProotFromArchive(String archivePath) {
+        try {
+            // First, list the archive contents to find the proot binary
+            ProcessBuilder listPb = new ProcessBuilder("tar", "-tzf", archivePath);
+            listPb.redirectErrorStream(true);
+            Process listProc = listPb.start();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(listProc.getInputStream()));
+            String prootEntry = null;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // Look for the proot binary (not proot-userland)
+                String trimmed = line.trim();
+                if ((trimmed.endsWith("/proot") || trimmed.equals("proot"))
+                        && !trimmed.contains("proot-userland")) {
+                    prootEntry = trimmed;
+                    // Prefer root/bin/proot or bin/proot over top-level
+                    if (trimmed.endsWith("bin/proot")) {
+                        break;
+                    }
+                }
+            }
+            listProc.waitFor();
+
+            if (prootEntry == null) {
+                Log.e(TAG, "Could not find proot binary in archive");
+                return false;
+            }
+
+            Log.i(TAG, "Found proot binary in archive: " + prootEntry);
+
+            // Extract just the proot binary
+            ProcessBuilder extractPb = new ProcessBuilder(
+                "tar", "-xzf", archivePath,
+                "-C", filesDir,
+                "--strip-components=" + countPathComponents(prootEntry),
+                prootEntry
+            );
+            extractPb.redirectErrorStream(true);
+            Process extractProc = extractPb.start();
+            boolean completed = extractProc.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+            if (!completed) {
+                extractProc.destroyForcibly();
+                return false;
+            }
+            if (extractProc.exitValue() != 0) {
+                Log.e(TAG, "tar extract failed with exit code: " + extractProc.exitValue());
+                // Fallback: extract entire archive and copy proot binary
+                return extractProotFromArchiveFallback(archivePath, prootEntry);
+            }
+
+            // The extracted file may be at filesDir/proot, move it to prootPath
+            File extractedFile = new File(filesDir, "proot");
+            File targetFile = new File(prootPath);
+            if (extractedFile.exists() && !extractedFile.getAbsolutePath().equals(targetFile.getAbsolutePath())) {
+                // Ensure parent directory exists
+                targetFile.getParentFile().mkdirs();
+                extractedFile.renameTo(targetFile);
+            }
+
+            return targetFile.exists();
+        } catch (Exception e) {
+            Log.e(TAG, "Error extracting proot from archive: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Fallback: extract entire archive and find/copy the proot binary.
+     */
+    private boolean extractProotFromArchiveFallback(String archivePath, String prootEntry) {
+        try {
+            File tempDir = new File(filesDir + "/proot-temp");
+            if (tempDir.exists()) {
+                deleteRecursive(tempDir);
+            }
+            tempDir.mkdirs();
+
+            ProcessBuilder extractPb = new ProcessBuilder(
+                "tar", "-xzf", archivePath, "-C", tempDir.getAbsolutePath()
+            );
+            extractPb.redirectErrorStream(true);
+            Process extractProc = extractPb.start();
+            boolean completed = extractProc.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+            if (!completed) {
+                extractProc.destroyForcibly();
+                return false;
+            }
+
+            // Find and copy the proot binary
+            File prootFile = findFile(tempDir, "proot");
+            if (prootFile == null) {
+                Log.e(TAG, "Could not find proot binary in extracted archive");
+                deleteRecursive(tempDir);
+                return false;
+            }
+
+            // Copy to prootPath
+            File targetFile = new File(prootPath);
+            targetFile.getParentFile().mkdirs();
+            copyFile(prootFile, targetFile);
+
+            // Cleanup temp directory
+            deleteRecursive(tempDir);
+            return targetFile.exists();
+        } catch (Exception e) {
+            Log.e(TAG, "Fallback extraction failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Count the number of path components (for --strip-components).
+     */
+    private int countPathComponents(String path) {
+        if (path == null || path.isEmpty()) return 0;
+        // Remove trailing slashes
+        String normalized = path.replaceAll("/+$", "");
+        if (normalized.isEmpty()) return 0;
+        return normalized.split("/").length - 1;
+    }
+
+    /**
+     * Recursively find a file by name in a directory tree.
+     */
+    private File findFile(File dir, String name) {
+        File[] files = dir.listFiles();
+        if (files == null) return null;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                File found = findFile(f, name);
+                if (found != null) return found;
+            } else if (f.getName().equals(name)) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Copy a file from source to destination.
+     */
+    private void copyFile(File src, File dst) throws IOException {
+        InputStream is = new java.io.FileInputStream(src);
+        FileOutputStream fos = new FileOutputStream(dst);
+        byte[] buffer = new byte[8192];
+        int len;
+        while ((len = is.read(buffer)) != -1) {
+            fos.write(buffer, 0, len);
+        }
+        fos.flush();
+        fos.close();
+        is.close();
+    }
+
+    /**
+     * Recursively delete a directory.
+     */
+    private void deleteRecursive(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        file.delete();
     }
 
     /**
@@ -479,8 +700,34 @@ public class OpenCodeBridgePlugin extends Plugin {
 
     /**
      * Get download URLs for Ubuntu rootfs, ordered by reliability.
+     *
+     * IMPORTANT for armhf (32-bit ARM):
+     * - Ubuntu 24.04 (Noble) cloud images DO have armhf rootfs tarballs
+     * - Ubuntu 24.04 dropped Raspberry Pi 32-bit *desktop/server* images, but
+     *   cloud-images.ubuntu.com still provides armhf root.tar.xz
+     * - Ubuntu Base images (cdimage.ubuntu.com) also have armhf .tar.gz
+     * - For 32-bit ARM, the cloud image rootfs is the recommended option
+     *
+     * Fallback: Ubuntu Base images from cdimage.ubuntu.com (these are .tar.gz,
+     * not .tar.xz, and are even more minimal - just the base system without
+     * cloud-init). The setupUbuntuConfig() method handles post-extraction setup.
      */
     private String[] getUbuntuRootfsUrls(String ubuntuArch) {
+        if ("armhf".equals(ubuntuArch)) {
+            return new String[]{
+                // Ubuntu 22.04 LTS (Jammy) armhf - confirmed available, stable
+                "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-armhf-root.tar.xz",
+                // Ubuntu 24.04 LTS (Noble) armhf - confirmed available on cloud-images
+                "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-armhf-root.tar.xz",
+                // Ubuntu Base 22.04 armhf - very minimal, from cdimage.ubuntu.com (.tar.gz)
+                "https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-armhf.tar.gz",
+                // Ubuntu Base 24.04 armhf - very minimal (.tar.gz)
+                "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-armhf.tar.gz",
+                // Anlinux pre-built Ubuntu armhf rootfs
+                "https://github.com/EXALAB/Anlinux-Resources/raw/master/Rootfs/Ubuntu/armhf/ubuntu-rootfs-armhf.tar.xz",
+            };
+        }
+        // For arm64, amd64, i386
         return new String[]{
             "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-" + ubuntuArch + "-root.tar.xz",
             "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-" + ubuntuArch + "-root.tar.xz",
@@ -691,6 +938,7 @@ public class OpenCodeBridgePlugin extends Plugin {
             FileOutputStream fos = new FileOutputStream(wrapperPath);
             String script = "#!/bin/sh\n"
                 + "# OpenCode wrapper script - launches OpenCode inside proot Ubuntu\n"
+                + "# Supports 32-bit ARM (armhf) and 64-bit ARM (arm64) devices\n"
                 + "PROOT=\"" + prootPath + "\"\n"
                 + "UBUNTU_ROOTFS=\"" + ubuntuRootPath + "\"\n"
                 + "WORKDIR=\"${1:-/root}\"\n"
@@ -704,7 +952,22 @@ public class OpenCodeBridgePlugin extends Plugin {
                 + "    fi\n"
                 + "done\n"
                 + "\n"
+                + "# IMPORTANT: Unset LD_PRELOAD before running proot\n"
+                + "# On Android, LD_PRELOAD may be set by the system and will cause\n"
+                + "# proot to crash with 'loader not found' errors\n"
                 + "unset LD_PRELOAD\n"
+                + "\n"
+                + "# For Android 15+ with strict seccomp filters, proot needs\n"
+                + "# PROOT_NO_SECCOMP=1 to bypass seccomp restrictions on ptrace.\n"
+                + "# Android 15+ blocks certain ptrace operations that proot\n"
+                + "# relies on for syscall interception.\n"
+                + "export PROOT_NO_SECCOMP=1\n"
+                + "\n"
+                + "# On 32-bit ARM, use a lower LOADER_ADDRESS to avoid memory conflicts\n"
+                + "# See: https://github.com/termux/termux-packages/issues/189\n"
+                + "if [ \"$(uname -m)\" = \"armv7l\" ] || [ \"$(uname -m)\" = \"armhf\" ]; then\n"
+                + "    export PROOT_LOADER_ADDRESS=0x20000000\n"
+                + "fi\n"
                 + "\n"
                 + "exec $PROOT -0 \\\n"
                 + "    -r $UBUNTU_ROOTFS \\\n"
@@ -718,6 +981,7 @@ public class OpenCodeBridgePlugin extends Plugin {
                 + "    --env HOME=/root \\\n"
                 + "    --env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.opencode/bin \\\n"
                 + "    --env SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \\\n"
+                + "    --env PROOT_NO_SECCOMP=1 \\\n"
                 + "    -w /root \\\n"
                 + "    /bin/bash -c '/root/.opencode/bin/opencode \"$@\"' _ \"$@\"\n";
             fos.write(script.getBytes());

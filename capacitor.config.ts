@@ -1,23 +1,17 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.qwen.code.android',
-  appName: 'Qwen Code',
+  appId: 'com.opencode.android',
+  appName: 'OpenCode',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    cleartext: true,
-  },
-  android: {
-    buildOptions: {
-      keystore: undefined,
-    },
     allowMixedContent: true,
   },
   plugins: {
     StatusBar: {
       style: 'DARK',
-      backgroundColor: '#0a0a1a',
+      backgroundColor: '#0d1117',
     },
     Keyboard: {
       resize: 'body',

@@ -1,4 +1,4 @@
-package com.qwen.code.android;
+package com.opencode.android;
 
 import android.os.Bundle;
 import android.webkit.WebSettings;
@@ -11,9 +11,8 @@ public class MainActivity extends BridgeActivity {
     
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        registerPlugin(QwenCodeBridgePlugin.class);
-        registerPlugin(ZAIWebViewPlugin.class);
         registerPlugin(OpenCodeBridgePlugin.class);
+        registerPlugin(OpenCodeProotPlugin.class);
         super.onCreate(savedInstanceState);
     }
     
@@ -26,7 +25,7 @@ public class MainActivity extends BridgeActivity {
             if (webView != null) {
                 WebSettings settings = webView.getSettings();
                 String defaultUA = settings.getUserAgentString();
-                if (!defaultUA.contains("QwenCode")) {
+                if (!defaultUA.contains("OpenCode")) {
                     settings.setUserAgentString(CUSTOM_USER_AGENT);
                 }
             }

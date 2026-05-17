@@ -1,4 +1,6 @@
 #!/bin/bash
+# Install OpenCode inside proot Ubuntu
+# OpenCode binary is only available for arm64 - this script will fail on 32-bit
 set -e
 
 UBUNTU_ROOT="$1"

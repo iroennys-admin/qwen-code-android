@@ -3,6 +3,45 @@ import { TOOL_DEFINITIONS } from '../utils/config';
 
 const MOBILE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
 
+/**
+ * Check if we're running in the native Android app with bridge access.
+ */
+function isNative(): boolean {
+  return !!(window as any)?.QwenCodeBridge?.httpRequest;
+}
+
+/**
+ * Make an HTTP request using the native bridge (bypasses CORS) or fetch as fallback.
+ */
+async function apiRequest(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+): Promise<{ status: number; body: string }> {
+  // Use native HTTP bridge on Android (bypasses CORS completely)
+  if (isNative()) {
+    try {
+      const result = await (window as any).QwenCodeBridge.httpRequest({
+        url,
+        method,
+        headers,
+        body: body || undefined,
+        timeout: 120,
+        followRedirects: true,
+      });
+      return { status: result.status, body: result.body || '' };
+    } catch (err: any) {
+      throw new Error(`Network error: ${err.message}`);
+    }
+  }
+  
+  // Fallback: use fetch for web/browser development
+  const response = await fetch(url, { method, headers, body });
+  const text = await response.text();
+  return { status: response.status, body: text };
+}
+
 function getBaseUrl(config: AppConfig): string {
   const provider = config.providers.find(p => p.id === config.activeProvider);
   if (!provider) return '';
@@ -66,6 +105,7 @@ export function buildApiMessages(
 /**
  * Make a single chat completion request (non-streaming) and return the full response.
  * Used by the agentic loop for reliable tool call handling.
+ * Uses native HTTP bridge on Android to bypass CORS.
  */
 export async function chatCompletion(
   config: AppConfig,
@@ -100,10 +140,10 @@ export async function chatCompletion(
     tools: TOOL_DEFINITIONS,
   });
   
-  const response = await fetch(url, { method: 'POST', headers, body });
+  const response = await apiRequest(url, 'POST', headers, body);
   
-  if (!response.ok) {
-    const errText = await response.text();
+  if (response.status !== 200) {
+    const errText = response.body;
     if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
       throw new Error('Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.');
     }
@@ -114,7 +154,13 @@ export async function chatCompletion(
     throw new Error(`API Error ${response.status}: ${errText.substring(0, 500)}`);
   }
   
-  const data = await response.json();
+  let data: any;
+  try {
+    data = JSON.parse(response.body);
+  } catch {
+    throw new Error(`Invalid API response: ${response.body.substring(0, 200)}`);
+  }
+  
   const choice = data.choices?.[0];
   
   if (!choice?.message) {
@@ -131,6 +177,9 @@ export async function chatCompletion(
 
 /**
  * Streaming chat completion - yields chunks as they arrive.
+ * On native Android: uses non-streaming request and parses the full response
+ * (since native HTTP doesn't support SSE streaming).
+ * On web: uses fetch with ReadableStream for real SSE streaming.
  * Returns accumulated result at the end.
  */
 export async function* streamChatCompletion(
@@ -163,6 +212,15 @@ export async function* streamChatCompletion(
     tools: TOOL_DEFINITIONS,
   });
   
+  // On native Android, we need to handle streaming differently
+  // because the native HTTP bridge doesn't support SSE streaming.
+  // We'll use non-streaming mode and simulate streaming.
+  if (isNative()) {
+    yield* streamViaNativeHttp(url, headers, body, config);
+    return;
+  }
+  
+  // Web fallback: use fetch with SSE streaming
   try {
     const response = await fetch(url, { method: 'POST', headers, body });
     
@@ -172,7 +230,6 @@ export async function* streamChatCompletion(
         yield { type: 'error', error: 'Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.' };
         return;
       }
-      // Handle OpenCode Zen rate limit error
       if (errText.includes('FreeUsageLimitError')) {
         yield { type: 'error', error: 'Limite de uso gratuito alcanzado. Espera un momento o cambia de modelo gratuito.' };
         return;
@@ -189,8 +246,6 @@ export async function* streamChatCompletion(
     
     const decoder = new TextDecoder();
     let buffer = '';
-    
-    // Accumulate tool calls across chunks
     const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>();
     
     while (true) {
@@ -207,7 +262,6 @@ export async function* streamChatCompletion(
         
         const data = trimmed.slice(6);
         if (data === '[DONE]') {
-          // Yield accumulated tool calls
           for (const [, tc] of toolCallMap) {
             const toolCall: ToolCall = {
               id: tc.id || `tc_${Date.now()}`,
@@ -226,20 +280,16 @@ export async function* streamChatCompletion(
         try {
           const parsed = JSON.parse(data);
           const choice = parsed.choices?.[0];
-          
           if (!choice) continue;
-          
           const delta = choice.delta;
           
           if (delta?.content) {
             yield { type: 'content', content: delta.content };
           }
-          
           if (delta?.reasoning_content) {
             yield { type: 'thinking', thinking: delta.reasoning_content };
           }
           
-          // Accumulate tool calls from stream chunks
           if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0;
@@ -259,7 +309,6 @@ export async function* streamChatCompletion(
           }
           
           if (choice.finish_reason === 'stop' || choice.finish_reason === 'tool_calls') {
-            // Yield accumulated tool calls
             for (const [, tc] of toolCallMap) {
               const toolCall: ToolCall = {
                 id: tc.id || `tc_${Date.now()}`,
@@ -279,6 +328,94 @@ export async function* streamChatCompletion(
         }
       }
     }
+  } catch (err: any) {
+    yield { type: 'error', error: `Network error: ${err.message}` };
+  }
+}
+
+/**
+ * Native HTTP streaming: Since the Android bridge doesn't support SSE,
+ * we make a non-streaming request and simulate the streaming experience
+ * by yielding content in chunks as we parse the full response.
+ */
+async function* streamViaNativeHttp(
+  url: string,
+  headers: Record<string, string>,
+  _streamBody: string,
+  config: AppConfig,
+): AsyncGenerator<StreamChunk> {
+  try {
+    // Make non-streaming request for native (more reliable)
+    const nonStreamBody = JSON.stringify({
+      model: config.activeModel,
+      messages: (JSON.parse(_streamBody)).messages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: false,  // Non-streaming for native HTTP
+      tools: TOOL_DEFINITIONS,
+    });
+    
+    const response = await apiRequest(url, 'POST', headers, nonStreamBody);
+    
+    if (response.status !== 200) {
+      const errText = response.body;
+      if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
+        yield { type: 'error', error: 'Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.' };
+        return;
+      }
+      if (errText.includes('FreeUsageLimitError')) {
+        yield { type: 'error', error: 'Limite de uso gratuito alcanzado. Espera un momento o cambia de modelo gratuito.' };
+        return;
+      }
+      yield { type: 'error', error: `API Error ${response.status}: ${errText.substring(0, 500)}` };
+      return;
+    }
+    
+    let data: any;
+    try {
+      data = JSON.parse(response.body);
+    } catch {
+      yield { type: 'error', error: `Invalid API response: ${response.body.substring(0, 200)}` };
+      return;
+    }
+    
+    const choice = data.choices?.[0];
+    if (!choice?.message) {
+      yield { type: 'error', error: 'No response from API' };
+      return;
+    }
+    
+    // Yield thinking content first
+    if (choice.message.reasoning_content) {
+      yield { type: 'thinking', thinking: choice.message.reasoning_content };
+    }
+    
+    // Yield content in simulated chunks for better UX
+    const content = choice.message.content || '';
+    if (content) {
+      // Split content into chunks of ~50 chars for streaming effect
+      const chunkSize = 50;
+      for (let i = 0; i < content.length; i += chunkSize) {
+        yield { type: 'content', content: content.slice(i, i + chunkSize) };
+      }
+    }
+    
+    // Yield tool calls
+    if (choice.message.tool_calls) {
+      for (const tc of choice.message.tool_calls) {
+        const toolCall: ToolCall = {
+          id: tc.id || `tc_${Date.now()}`,
+          type: mapToolType(tc.function?.name),
+          name: tc.function?.name || '',
+          params: parseToolArgs(tc.function?.arguments),
+          status: 'pending',
+          requiresApproval: tc.function?.name === 'shell' || tc.function?.name === 'code_execute',
+        };
+        yield { type: 'tool_call', toolCall };
+      }
+    }
+    
+    yield { type: 'done', usage: data.usage };
   } catch (err: any) {
     yield { type: 'error', error: `Network error: ${err.message}` };
   }
@@ -325,15 +462,13 @@ export async function fetchModels(config: AppConfig): Promise<string[]> {
   const apiKey = provider.id === 'opencode' ? (provider.apiKey || 'public') : provider.apiKey;
   
   try {
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'User-Agent': MOBILE_USER_AGENT,
-      },
+    const response = await apiRequest(url, 'GET', {
+      'Authorization': `Bearer ${apiKey}`,
+      'User-Agent': MOBILE_USER_AGENT,
     });
     
-    if (!response.ok) return [];
-    const data = await response.json();
+    if (response.status !== 200) return [];
+    const data = JSON.parse(response.body);
     return (data.data || []).map((m: any) => m.id).sort();
   } catch {
     return [];
@@ -353,21 +488,22 @@ export async function testApiKey(config: AppConfig): Promise<{success: boolean; 
   }
   
   try {
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'User-Agent': MOBILE_USER_AGENT,
-      },
+    const response = await apiRequest(url, 'GET', {
+      'Authorization': `Bearer ${apiKey}`,
+      'User-Agent': MOBILE_USER_AGENT,
     });
     
-    if (!response.ok) {
-      const errText = await response.text();
+    if (response.status !== 200) {
+      const errText = response.body;
       if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
         return { success: false, error: 'Proxy bloqueado por Cloudflare' };
       }
+      if (errText.includes('FreeUsageLimitError')) {
+        return { success: false, error: 'Limite de uso gratuito alcanzado. Espera un momento.' };
+      }
       return { success: false, error: `HTTP ${response.status}` };
     }
-    const data = await response.json();
+    const data = JSON.parse(response.body);
     return { success: true, modelCount: data.data?.length || 0 };
   } catch (err: any) {
     return { success: false, error: err.message };

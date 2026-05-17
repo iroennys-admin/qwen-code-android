@@ -16,7 +16,8 @@ const QUICK_PROMPTS = [
 ];
 
 export default function WelcomeScreen({ config, onSend }: WelcomeProps) {
-  const hasKey = !!config.providers.find(p => p.id === config.activeProvider)?.apiKey;
+  // OpenCode Zen doesn't need an API key for free models
+  const hasKey = config.activeProvider === 'opencode' || !!config.providers.find(p => p.id === config.activeProvider)?.apiKey;
   
   return (
     <div style={{

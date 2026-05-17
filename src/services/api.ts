@@ -15,7 +15,12 @@ function getBaseUrl(config: AppConfig): string {
 
 function getApiKey(config: AppConfig): string {
   const provider = config.providers.find(p => p.id === config.activeProvider);
-  return provider?.apiKey || '';
+  if (!provider) return '';
+  // OpenCode Zen free models use "public" as API key
+  if (provider.id === 'opencode' && !provider.apiKey) {
+    return 'public';
+  }
+  return provider.apiKey || '';
 }
 
 function buildHeaders(config: AppConfig, apiKey: string): Record<string, string> {
@@ -74,8 +79,12 @@ export async function chatCompletion(
   const baseUrl = getBaseUrl(config);
   const apiKey = getApiKey(config);
   
-  if (!baseUrl || !apiKey) {
-    throw new Error('Provider not configured or API key missing');
+  if (!baseUrl) {
+    throw new Error('Provider not configured');
+  }
+  // OpenCode Zen doesn't require an API key for free models
+  if (!apiKey && config.activeProvider !== 'opencode') {
+    throw new Error('API key missing. Go to Settings to configure it.');
   }
   
   const url = `${baseUrl}/chat/completions`;
@@ -97,6 +106,10 @@ export async function chatCompletion(
     const errText = await response.text();
     if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
       throw new Error('Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.');
+    }
+    // Handle OpenCode Zen rate limit error
+    if (errText.includes('FreeUsageLimitError')) {
+      throw new Error('Limite de uso gratuito alcanzado. Espera un momento o cambia de modelo gratuito.');
     }
     throw new Error(`API Error ${response.status}: ${errText.substring(0, 500)}`);
   }
@@ -127,8 +140,13 @@ export async function* streamChatCompletion(
   const baseUrl = getBaseUrl(config);
   const apiKey = getApiKey(config);
   
-  if (!baseUrl || !apiKey) {
-    yield { type: 'error', error: 'Provider not configured or API key missing' };
+  if (!baseUrl) {
+    yield { type: 'error', error: 'Provider not configured' };
+    return;
+  }
+  // OpenCode Zen doesn't require an API key for free models
+  if (!apiKey && config.activeProvider !== 'opencode') {
+    yield { type: 'error', error: 'API key missing. Ve a Configuracion para agregarla.' };
     return;
   }
   
@@ -152,6 +170,11 @@ export async function* streamChatCompletion(
       const errText = await response.text();
       if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
         yield { type: 'error', error: 'Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.' };
+        return;
+      }
+      // Handle OpenCode Zen rate limit error
+      if (errText.includes('FreeUsageLimitError')) {
+        yield { type: 'error', error: 'Limite de uso gratuito alcanzado. Espera un momento o cambia de modelo gratuito.' };
         return;
       }
       yield { type: 'error', error: `API Error ${response.status}: ${errText.substring(0, 500)}` };
@@ -297,13 +320,14 @@ export async function fetchModels(config: AppConfig): Promise<string[]> {
   const provider = config.providers.find(p => p.id === config.activeProvider);
   if (!provider) return [];
   
-  const baseUrl = config.proxyEnabled ? provider.proxyBaseUrl : provider.baseUrl;
+  const baseUrl = config.proxyEnabled ? (provider.proxyBaseUrl || provider.baseUrl) : provider.baseUrl;
   const url = `${baseUrl}/models`;
+  const apiKey = provider.id === 'opencode' ? (provider.apiKey || 'public') : provider.apiKey;
   
   try {
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${provider.apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
         'User-Agent': MOBILE_USER_AGENT,
       },
     });
@@ -320,13 +344,18 @@ export async function testApiKey(config: AppConfig): Promise<{success: boolean; 
   const provider = config.providers.find(p => p.id === config.activeProvider);
   if (!provider) return { success: false, error: 'Provider not found' };
   
-  const baseUrl = config.proxyEnabled ? provider.proxyBaseUrl : provider.baseUrl;
+  const baseUrl = config.proxyEnabled ? (provider.proxyBaseUrl || provider.baseUrl) : provider.baseUrl;
   const url = `${baseUrl}/models`;
+  const apiKey = provider.id === 'opencode' ? (provider.apiKey || 'public') : provider.apiKey;
+  
+  if (!apiKey && provider.id !== 'opencode') {
+    return { success: false, error: 'API key required' };
+  }
   
   try {
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${provider.apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
         'User-Agent': MOBILE_USER_AGENT,
       },
     });

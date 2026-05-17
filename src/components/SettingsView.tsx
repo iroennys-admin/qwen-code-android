@@ -194,14 +194,14 @@ function ProvidersTab({ config, updateProvider, updateConfig, testing, testResul
               />
               <button
                 onClick={() => onTest(provider.id)}
-                disabled={testing === provider.id || !provider.apiKey}
+                disabled={testing === provider.id}
                 style={{
                   padding: '8px var(--space-md)',
-                  background: provider.apiKey ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                  background: provider.apiKey || provider.id === 'opencode' ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
                   border: 'none',
                   borderRadius: 'var(--radius-sm)',
-                  color: provider.apiKey ? 'white' : 'var(--text-tertiary)',
-                  cursor: provider.apiKey ? 'pointer' : 'not-allowed',
+                  color: provider.apiKey || provider.id === 'opencode' ? 'white' : 'var(--text-tertiary)',
+                  cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 600,
                 }}
@@ -515,7 +515,7 @@ function AboutTab() {
       </div>
       
       <h2 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 700 }}>Qwen Code</h2>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v3.1.0 — Z.ai Browser + Full Device Control</p>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>v3.3.0 — OpenCode Zen FREE + Full Device Control</p>
       
       <div style={{
         background: 'var(--bg-card)',
@@ -528,7 +528,8 @@ function AboutTab() {
         color: 'var(--text-secondary)',
         lineHeight: 1.8,
       }}>
-        <div>🤖 GLM-5.1 / 28 herramientas</div>
+        <div>🤖 DeepSeek V4 / GLM-5.1 / 28 herramientas</div>
+        <div>🆓 OpenCode Zen - 5 modelos GRATUITOS (sin API key)</div>
         <div>⚡ Ejecucion de codigo (Python, JS, Bash)</div>
         <div>💻 Comandos shell completos</div>
         <div>📁 Acceso completo al sistema de archivos</div>
@@ -553,15 +554,21 @@ function AboutTab() {
         lineHeight: 1.6,
       }}>
         <div style={{ fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>
-          🆓 Como obtener API Key GRATIS para GLM-5.1:
+          🆓 Modelos GRATUITOS con OpenCode Zen:
         </div>
-        <div>1. Ve a <b>z.ai</b> y crea una cuenta</div>
-        <div>2. Ve a <b>z.ai/manage-apikey/apikey-list</b></div>
-        <div>3. Crea una API Key y pegala aqui</div>
-        <div>4. Nuevo: 20M tokens gratis en bigmodel.cn</div>
+        <div>✅ DeepSeek V4 Flash Free - razonamiento + tool call</div>
+        <div>✅ Qwen3.6 Plus Free - Alibaba Qwen3.6</div>
+        <div>✅ Big Pickle - modelo custom de OpenCode</div>
+        <div>✅ MiniMax M2.5 Free</div>
+        <div>✅ Nemotron 3 Super Free - NVIDIA</div>
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
+          Sin API key, sin registro, sin tarjeta de credito. Solo abre la app y chatea.
+        </div>
         <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--accent-secondary)' }}>
-          O usa Modal.com (GLM-5.1 gratis, sin tarjeta)
+          Para modelos premium (GLM-5.1, GPT-5, Claude):
         </div>
+        <div>1. Obtén un OPENCODE_API_KEY en opencode.ai/zen</div>
+        <div>2. O usa otras API keys (NVIDIA, Z.ai, OpenRouter)</div>
       </div>
       
       <div style={{

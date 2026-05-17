@@ -57,22 +57,35 @@ const MODAL_MODELS: ModelInfo[] = [
   { id: 'glm-5.1', name: 'GLM-5.1 (Free)', contextLength: 203000 },
 ];
 
-const OPENCODE_MODELS: ModelInfo[] = [
-  { id: 'big-pickle', name: 'Big Pickle (Free)', contextLength: 200000 },
-  { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash (Free)', contextLength: 131072 },
-  { id: 'minimax-m2.5-free', name: 'MiniMax M2.5 (Free)', contextLength: 131072 },
-  { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super (Free)', contextLength: 131072 },
-  { id: 'qwen3.6-plus-free', name: 'Qwen3.6 Plus (Free)', contextLength: 131072 },
+const OPENCODE_FREE_MODELS: ModelInfo[] = [
+  // Free models - no API key needed, use apiKey "public"
+  { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash (FREE)', contextLength: 200000, description: 'Most capable free model, reasoning + tool call' },
+  { id: 'qwen3.6-plus-free', name: 'Qwen3.6 Plus (FREE)', contextLength: 262144, description: 'Alibaba Qwen3.6, reasoning + tool call' },
+  { id: 'big-pickle', name: 'Big Pickle (FREE)', contextLength: 200000, description: 'OpenCode custom model, reasoning + tool call' },
+  { id: 'minimax-m2.5-free', name: 'MiniMax M2.5 (FREE)', contextLength: 204800, description: 'MiniMax reasoning model' },
+  { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super (FREE)', contextLength: 204800, description: 'NVIDIA Nemotron reasoning model' },
+];
+
+const OPENCODE_PAID_MODELS: ModelInfo[] = [
+  // Paid models - require OPENCODE_API_KEY
+  { id: 'glm-5.1', name: 'GLM-5.1', contextLength: 204800, description: 'Z.ai flagship model' },
+  { id: 'glm-5', name: 'GLM-5', contextLength: 204800 },
+  { id: 'gpt-5.1', name: 'GPT-5.1', contextLength: 400000 },
+  { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', contextLength: 400000 },
+  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', contextLength: 1000000 },
+  { id: 'gemini-3-flash', name: 'Gemini 3 Flash', contextLength: 1048576 },
+  { id: 'qwen3-coder', name: 'Qwen3 Coder', contextLength: 262144 },
+  { id: 'kimi-k2.5', name: 'Kimi K2.5', contextLength: 262144 },
 ];
 
 export const DEFAULT_PROVIDERS: Provider[] = [
   {
     id: 'opencode',
-    name: 'OpenCode Zen (FREE - No API Key)',
+    name: 'OpenCode Zen (FREE)',
     baseUrl: 'https://opencode.ai/zen/v1',
     proxyBaseUrl: '',
-    apiKey: '',
-    models: OPENCODE_MODELS,
+    apiKey: 'public',  // Free models use "public" as API key
+    models: [...OPENCODE_FREE_MODELS, ...OPENCODE_PAID_MODELS],
     enabled: true,
   },
   {
@@ -122,7 +135,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
   },
 ];
 
-const AGENT_SYSTEM_PROMPT = `You are Qwen Code v3.0, an advanced AI agent running on an Android device with FULL DEVICE CONTROL. You can execute commands, read/write any file, send messages, make calls, control other apps, read the screen, automate UI interactions, and perform ANY task the user requests. You are essentially the user's personal assistant with complete access to their phone.
+const AGENT_SYSTEM_PROMPT = `You are Qwen Code v3.3, an advanced AI agent running on an Android device with FULL DEVICE CONTROL. You can execute commands, read/write any file, send messages, make calls, control other apps, read the screen, automate UI interactions, and perform ANY task the user requests. You are essentially the user's personal assistant with complete access to their phone.
 
 ## Core Principle: AUTONOMOUS EXECUTION
 You are an autonomous agent. When given a task:
@@ -261,7 +274,7 @@ The user communicates in Spanish. Respond in Spanish but write code, file names,
 export const DEFAULT_CONFIG: AppConfig = {
   providers: DEFAULT_PROVIDERS,
   activeProvider: 'opencode',
-  activeModel: 'big-pickle',
+  activeModel: 'deepseek-v4-flash-free',
   proxyEnabled: false,
   proxyBaseUrl: CUBA_PROXY_BASE,
   streaming: true,

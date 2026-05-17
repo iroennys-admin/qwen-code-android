@@ -11,7 +11,7 @@ import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
 import ZAIBrowser from './components/ZAIBrowser';
 
-const CONFIG_VERSION = 4;
+const CONFIG_VERSION = 5;
 
 function loadConfig(): AppConfig {
   try {
@@ -72,7 +72,8 @@ export default function App() {
   useEffect(() => { saveMessages(messages); }, [messages]);
 
   const activeProvider = config.providers.find(p => p.id === config.activeProvider);
-  const hasApiKey = !!activeProvider?.apiKey;
+  // OpenCode Zen doesn't need an API key for free models - always "ready"
+  const hasApiKey = activeProvider?.id === 'opencode' || !!activeProvider?.apiKey;
 
   const updateConfig = useCallback((updates: Partial<AppConfig>) => {
     setConfig(prev => ({ ...prev, ...updates }));

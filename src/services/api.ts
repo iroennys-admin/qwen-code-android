@@ -1,13 +1,37 @@
 import type { AppConfig, StreamChunk, ToolCall, ApiMessage, ApiToolCall } from '../types';
 import { TOOL_DEFINITIONS } from '../utils/config';
+import { registerPlugin, Capacitor } from '@capacitor/core';
 
 const MOBILE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
 
+// ==========================================
+// Capacitor Plugin for HTTP (bypasses CORS)
+// ==========================================
+
+interface HttpBridgePlugin {
+  httpRequest(options: {
+    url: string;
+    method?: string;
+    body?: string;
+    headers?: Record<string, string>;
+    timeout?: number;
+    followRedirects?: boolean;
+  }): Promise<{
+    status: number;
+    body: string;
+    headers?: Record<string, string>;
+    url?: string;
+    error?: string;
+  }>;
+}
+
+const QwenCodeBridge = registerPlugin<HttpBridgePlugin>('QwenCodeBridge');
+
 /**
- * Check if we're running in the native Android app with bridge access.
+ * Check if we're running in the native Android app.
  */
 function isNative(): boolean {
-  return !!(window as any)?.QwenCodeBridge?.httpRequest;
+  return Capacitor.isNativePlatform();
 }
 
 /**
@@ -22,7 +46,7 @@ async function apiRequest(
   // Use native HTTP bridge on Android (bypasses CORS completely)
   if (isNative()) {
     try {
-      const result = await (window as any).QwenCodeBridge.httpRequest({
+      const result = await QwenCodeBridge.httpRequest({
         url,
         method,
         headers,
@@ -30,6 +54,12 @@ async function apiRequest(
         timeout: 120,
         followRedirects: true,
       });
+      
+      // Check for native error
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
       return { status: result.status, body: result.body || '' };
     } catch (err: any) {
       throw new Error(`Network error: ${err.message}`);
@@ -85,7 +115,6 @@ function buildHeaders(config: AppConfig, apiKey: string): Record<string, string>
 
 /**
  * Build API messages from conversation history.
- * This handles the proper OpenAI format with tool_calls and tool results.
  */
 export function buildApiMessages(
   messages: ApiMessage[], 
@@ -104,7 +133,6 @@ export function buildApiMessages(
 
 /**
  * Make a single chat completion request (non-streaming) and return the full response.
- * Used by the agentic loop for reliable tool call handling.
  * Uses native HTTP bridge on Android to bypass CORS.
  */
 export async function chatCompletion(
@@ -122,7 +150,6 @@ export async function chatCompletion(
   if (!baseUrl) {
     throw new Error('Provider not configured');
   }
-  // OpenCode Zen doesn't require an API key for free models
   if (!apiKey && config.activeProvider !== 'opencode') {
     throw new Error('API key missing. Go to Settings to configure it.');
   }
@@ -147,7 +174,6 @@ export async function chatCompletion(
     if (errText.includes('Just a moment') || errText.includes('challenge-platform')) {
       throw new Error('Proxy bloqueado por Cloudflare. Intenta de nuevo o cambia la URL del proxy.');
     }
-    // Handle OpenCode Zen rate limit error
     if (errText.includes('FreeUsageLimitError')) {
       throw new Error('Limite de uso gratuito alcanzado. Espera un momento o cambia de modelo gratuito.');
     }
@@ -176,11 +202,9 @@ export async function chatCompletion(
 }
 
 /**
- * Streaming chat completion - yields chunks as they arrive.
- * On native Android: uses non-streaming request and parses the full response
- * (since native HTTP doesn't support SSE streaming).
+ * Streaming chat completion.
+ * On native Android: uses non-streaming native request (since native HTTP doesn't support SSE).
  * On web: uses fetch with ReadableStream for real SSE streaming.
- * Returns accumulated result at the end.
  */
 export async function* streamChatCompletion(
   config: AppConfig,
@@ -193,7 +217,6 @@ export async function* streamChatCompletion(
     yield { type: 'error', error: 'Provider not configured' };
     return;
   }
-  // OpenCode Zen doesn't require an API key for free models
   if (!apiKey && config.activeProvider !== 'opencode') {
     yield { type: 'error', error: 'API key missing. Ve a Configuracion para agregarla.' };
     return;
@@ -212,9 +235,8 @@ export async function* streamChatCompletion(
     tools: TOOL_DEFINITIONS,
   });
   
-  // On native Android, we need to handle streaming differently
-  // because the native HTTP bridge doesn't support SSE streaming.
-  // We'll use non-streaming mode and simulate streaming.
+  // On native Android, native HTTP doesn't support SSE streaming.
+  // Use non-streaming request and simulate streaming.
   if (isNative()) {
     yield* streamViaNativeHttp(url, headers, body, config);
     return;
@@ -334,9 +356,7 @@ export async function* streamChatCompletion(
 }
 
 /**
- * Native HTTP streaming: Since the Android bridge doesn't support SSE,
- * we make a non-streaming request and simulate the streaming experience
- * by yielding content in chunks as we parse the full response.
+ * Native HTTP streaming: Make non-streaming request and simulate streaming.
  */
 async function* streamViaNativeHttp(
   url: string,
@@ -345,13 +365,13 @@ async function* streamViaNativeHttp(
   config: AppConfig,
 ): AsyncGenerator<StreamChunk> {
   try {
-    // Make non-streaming request for native (more reliable)
+    // Make non-streaming request for native
     const nonStreamBody = JSON.stringify({
       model: config.activeModel,
       messages: (JSON.parse(_streamBody)).messages,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
-      stream: false,  // Non-streaming for native HTTP
+      stream: false,
       tools: TOOL_DEFINITIONS,
     });
     
@@ -393,7 +413,6 @@ async function* streamViaNativeHttp(
     // Yield content in simulated chunks for better UX
     const content = choice.message.content || '';
     if (content) {
-      // Split content into chunks of ~50 chars for streaming effect
       const chunkSize = 50;
       for (let i = 0; i < content.length; i += chunkSize) {
         yield { type: 'content', content: content.slice(i, i + chunkSize) };
@@ -425,7 +444,6 @@ function parseToolArgs(argsStr: string): Record<string, unknown> {
   try {
     return JSON.parse(argsStr || '{}');
   } catch {
-    // Try to handle partial JSON
     try {
       return JSON.parse(argsStr + '}');
     } catch {

@@ -1,97 +1,118 @@
 import type { ShellResult, ToolType } from '../types';
+import { registerPlugin, Capacitor } from '@capacitor/core';
 
-// Bridge to native Android shell execution via Capacitor
-declare global {
-  interface Window {
-    QwenCodeBridge?: {
-      executeShell: (command: string, timeout: number) => Promise<ShellResult>;
-      readFile: (path: string) => Promise<{ value: string; error?: string }>;
-      writeFile: (path: string, content: string) => Promise<{ value: boolean; error?: string }>;
-      listDir: (path: string) => Promise<{ value: any[]; error?: string }>;
-      exists: (path: string) => Promise<{ value: boolean; isFile: boolean; isDir: boolean }>;
-      delete: (path: string, recursive?: boolean) => Promise<{ value: boolean }>;
-      move: (source: string, destination: string) => Promise<{ value: boolean }>;
-      copy: (source: string, destination: string) => Promise<{ value: boolean; error?: string }>;
-      mkdir: (path: string) => Promise<{ value: boolean }>;
-      getHomeDir: () => Promise<{ value: string }>;
-      getWorkingDir: () => Promise<{ value: string }>;
-      setWorkingDir: (dir: string) => Promise<{ value: boolean; error?: string }>;
-      httpRequest: (options: {
-        url: string;
-        method?: string;
-        body?: string;
-        headers?: Record<string, string>;
-        timeout?: number;
-        followRedirects?: boolean;
-      }) => Promise<{
-        status: number;
-        body: string;
-        headers?: Record<string, string>;
-        url?: string;
-        error?: string;
-      }>;
-      checkPermissions: () => Promise<{
-        canReadStorage: boolean;
-        canWriteStorage: boolean;
-        hasAllFilesAccess: boolean;
-        hasSmsPermission: boolean;
-        hasCallPermission: boolean;
-        hasContactsPermission: boolean;
-        hasAccessibility: boolean;
-        hasNotificationAccess: boolean;
-      }>;
-      requestStoragePermission: () => Promise<{ value: boolean }>;
-      isCapacitor: () => Promise<{ value: boolean }>;
-      // SMS
-      sendSms: (phoneNumber: string, message: string) => Promise<{ value: boolean; error?: string }>;
-      readSms: (limit: number, phoneNumber?: string) => Promise<{ value: any[]; error?: string }>;
-      // Phone
-      makeCall: (phoneNumber: string) => Promise<{ value: boolean; error?: string; note?: string }>;
-      readCallLog: (limit: number) => Promise<{ value: any[]; error?: string }>;
-      // Contacts
-      readContacts: (limit: number, search?: string) => Promise<{ value: any[]; error?: string }>;
-      // WhatsApp
-      sendWhatsApp: (phoneNumber: string, message: string) => Promise<{ value: boolean; error?: string; note?: string }>;
-      // Apps
-      launchApp: (packageName: string, action?: string, data?: string) => Promise<{ value: boolean; error?: string }>;
-      listInstalledApps: () => Promise<{ value: any[]; error?: string }>;
-      // Accessibility
-      accessibilityReadScreen: () => Promise<{ text: string; elements?: any[]; packageName?: string; error?: string }>;
-      accessibilityClickText: (text: string, exactMatch: boolean) => Promise<{ value: boolean; error?: string }>;
-      accessibilityClickAt: (x: number, y: number) => Promise<{ value: boolean; error?: string }>;
-      accessibilityTypeText: (text: string) => Promise<{ value: boolean; error?: string }>;
-      accessibilitySwipe: (startX: number, startY: number, endX: number, endY: number, duration: number) => Promise<{ value: boolean; error?: string }>;
-      accessibilityPressBack: () => Promise<{ value: boolean; error?: string }>;
-      accessibilityPressHome: () => Promise<{ value: boolean; error?: string }>;
-      // Notifications
-      readNotifications: (limit: number) => Promise<{ value: any[]; error?: string }>;
-      dismissNotification: (key: string) => Promise<{ value: boolean }>;
-      // Clipboard
-      clipboardWrite: (text: string) => Promise<{ value: boolean }>;
-      clipboardRead: () => Promise<{ value: string }>;
-      // Device
-      getDeviceInfo: () => Promise<any>;
-      showToast: (message: string) => Promise<{ value: boolean }>;
-      // Z.ai WebView Browser
-      openWebView: (url: string) => Promise<{ value: boolean; error?: string }>;
-      closeWebView: () => Promise<{ value: boolean }>;
-    };
-    AndroidBridge?: any;
-  }
+// ==========================================
+// Capacitor Plugin Interface & Registration
+// ==========================================
+
+interface QwenCodeBridgePlugin {
+  isCapacitor(): Promise<{ value: boolean }>;
+  checkPermissions(): Promise<{
+    canReadStorage: boolean;
+    canWriteStorage: boolean;
+    hasAllFilesAccess: boolean;
+    hasSmsPermission: boolean;
+    hasCallPermission: boolean;
+    hasContactsPermission: boolean;
+    hasAccessibility: boolean;
+    hasNotificationAccess: boolean;
+  }>;
+  requestStoragePermission(): Promise<{ value: boolean }>;
+  // Shell
+  executeShell(options: { command: string; timeout: number }): Promise<ShellResult>;
+  // File
+  readFile(options: { path: string }): Promise<{ value: string; error?: string }>;
+  writeFile(options: { path: string; content: string }): Promise<{ value: boolean; error?: string }>;
+  listDir(options: { path: string; showHidden?: boolean }): Promise<{ value: any[]; error?: string }>;
+  exists(options: { path: string }): Promise<{ value: boolean; isFile: boolean; isDir: boolean }>;
+  delete(options: { path: string; recursive?: boolean }): Promise<{ value: boolean }>;
+  move(options: { source: string; destination: string }): Promise<{ value: boolean }>;
+  copy(options: { source: string; destination: string }): Promise<{ value: boolean; error?: string }>;
+  mkdir(options: { path: string }): Promise<{ value: boolean }>;
+  getHomeDir(): Promise<{ value: string }>;
+  getWorkingDir(): Promise<{ value: string }>;
+  setWorkingDir(options: { dir: string }): Promise<{ value: boolean; error?: string }>;
+  // HTTP
+  httpRequest(options: {
+    url: string;
+    method?: string;
+    body?: string;
+    headers?: Record<string, string>;
+    timeout?: number;
+    followRedirects?: boolean;
+  }): Promise<{
+    status: number;
+    body: string;
+    headers?: Record<string, string>;
+    url?: string;
+    error?: string;
+  }>;
+  // SMS
+  sendSms(options: { phoneNumber: string; message: string }): Promise<{ value: boolean; error?: string }>;
+  readSms(options: { limit: number; phoneNumber?: string }): Promise<{ value: any[]; error?: string }>;
+  // Phone
+  makeCall(options: { phoneNumber: string }): Promise<{ value: boolean; error?: string; note?: string }>;
+  readCallLog(options: { limit: number }): Promise<{ value: any[]; error?: string }>;
+  // Contacts
+  readContacts(options: { limit: number; search?: string }): Promise<{ value: any[]; error?: string }>;
+  // WhatsApp
+  sendWhatsApp(options: { phoneNumber: string; message: string }): Promise<{ value: boolean; error?: string; note?: string }>;
+  // Apps
+  launchApp(options: { packageName: string; action?: string; data?: string }): Promise<{ value: boolean; error?: string }>;
+  listInstalledApps(): Promise<{ value: any[]; error?: string }>;
+  // Accessibility
+  accessibilityReadScreen(): Promise<{ text: string; elements?: any[]; packageName?: string; error?: string }>;
+  accessibilityClickText(options: { text: string; exactMatch: boolean }): Promise<{ value: boolean; error?: string }>;
+  accessibilityClickAt(options: { x: number; y: number }): Promise<{ value: boolean; error?: string }>;
+  accessibilityTypeText(options: { text: string }): Promise<{ value: boolean; error?: string }>;
+  accessibilitySwipe(options: { startX: number; startY: number; endX: number; endY: number; duration: number }): Promise<{ value: boolean; error?: string }>;
+  accessibilityPressBack(): Promise<{ value: boolean; error?: string }>;
+  accessibilityPressHome(): Promise<{ value: boolean; error?: string }>;
+  // Notifications
+  readNotifications(options: { limit: number }): Promise<{ value: any[]; error?: string }>;
+  dismissNotification(options: { key: string }): Promise<{ value: boolean }>;
+  // Clipboard
+  clipboardWrite(options: { text: string }): Promise<{ value: boolean }>;
+  clipboardRead(): Promise<{ value: string }>;
+  // Device
+  getDeviceInfo(): Promise<any>;
+  showToast(options: { message: string }): Promise<{ value: boolean }>;
+  // WebView
+  openWebView(options: { url: string }): Promise<{ value: boolean; error?: string }>;
+  closeWebView(): Promise<{ value: boolean }>;
 }
 
+// Register the plugin properly with Capacitor
+const QwenCodeBridge = registerPlugin<QwenCodeBridgePlugin>('QwenCodeBridge');
+
+/**
+ * Check if we're running in the native Android app.
+ * Uses Capacitor's platform detection - reliable way.
+ */
 export const isNative = (): boolean => {
-  return !!(window.QwenCodeBridge);
+  return Capacitor.isNativePlatform();
 };
+
+/**
+ * Get the native bridge plugin instance.
+ * Returns null if not on native platform.
+ */
+function getBridge(): QwenCodeBridgePlugin | null {
+  if (Capacitor.isNativePlatform()) {
+    return QwenCodeBridge;
+  }
+  return null;
+}
 
 // ==========================================
 // Shell Execution
 // ==========================================
 
 export async function executeShell(command: string, timeout: number = 60): Promise<ShellResult> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      return await window.QwenCodeBridge.executeShell(command, timeout);
+      return await bridge.executeShell({ command, timeout });
     } catch (err: any) {
       return { stdout: '', stderr: err.message, exitCode: -1 };
     }
@@ -116,9 +137,10 @@ function simulateShell(command: string): ShellResult {
 // ==========================================
 
 export async function readFile(path: string): Promise<string> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.readFile(path);
+      const result = await bridge.readFile({ path });
       if (result.error) throw new Error(result.error);
       return result.value || '';
     } catch (err: any) {
@@ -129,9 +151,10 @@ export async function readFile(path: string): Promise<string> {
 }
 
 export async function writeFile(path: string, content: string): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.writeFile(path, content);
+      const result = await bridge.writeFile({ path, content });
       if (result.error) throw new Error(result.error);
       return result.value;
     } catch (err: any) {
@@ -143,9 +166,10 @@ export async function writeFile(path: string, content: string): Promise<boolean>
 }
 
 export async function listDir(path: string): Promise<string[]> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.listDir(path);
+      const result = await bridge.listDir({ path });
       if (result.error) throw new Error(result.error);
       const entries = result.value || [];
       if (entries.length > 0 && typeof entries[0] === 'object') {
@@ -160,9 +184,10 @@ export async function listDir(path: string): Promise<string[]> {
 }
 
 export async function fileExists(path: string): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.exists(path);
+      const result = await bridge.exists({ path });
       return result.value;
     } catch { return false; }
   }
@@ -170,9 +195,10 @@ export async function fileExists(path: string): Promise<boolean> {
 }
 
 export async function deleteFile(path: string, recursive: boolean = false): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.delete(path, recursive);
+      const result = await bridge.delete({ path, recursive });
       return result.value;
     } catch { return false; }
   }
@@ -180,9 +206,10 @@ export async function deleteFile(path: string, recursive: boolean = false): Prom
 }
 
 export async function moveFile(source: string, destination: string): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.move(source, destination);
+      const result = await bridge.move({ source, destination });
       return result.value;
     } catch { return false; }
   }
@@ -190,9 +217,10 @@ export async function moveFile(source: string, destination: string): Promise<boo
 }
 
 export async function copyFile(source: string, destination: string): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.copy(source, destination);
+      const result = await bridge.copy({ source, destination });
       return result.value;
     } catch { return false; }
   }
@@ -200,9 +228,10 @@ export async function copyFile(source: string, destination: string): Promise<boo
 }
 
 export async function makeDir(path: string): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.mkdir(path);
+      const result = await bridge.mkdir({ path });
       return result.value;
     } catch { return false; }
   }
@@ -210,9 +239,10 @@ export async function makeDir(path: string): Promise<boolean> {
 }
 
 export async function getHomeDir(): Promise<string> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.getHomeDir();
+      const result = await bridge.getHomeDir();
       return result.value;
     } catch { return '/sdcard'; }
   }
@@ -220,9 +250,10 @@ export async function getHomeDir(): Promise<string> {
 }
 
 export async function getWorkingDir(): Promise<string> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.getWorkingDir();
+      const result = await bridge.getWorkingDir();
       return result.value;
     } catch { return '/sdcard'; }
   }
@@ -230,9 +261,10 @@ export async function getWorkingDir(): Promise<string> {
 }
 
 export async function setWorkingDir(dir: string): Promise<boolean> {
-  if (window.QwenCodeBridge) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      const result = await window.QwenCodeBridge.setWorkingDir(dir);
+      const result = await bridge.setWorkingDir({ dir });
       return result.value;
     } catch { return false; }
   }
@@ -251,9 +283,10 @@ export async function nativeHttpRequest(options: {
   timeout?: number;
   followRedirects?: boolean;
 }): Promise<{ status: number; body: string; headers?: Record<string, string>; url?: string; error?: string }> {
-  if (window.QwenCodeBridge?.httpRequest) {
+  const bridge = getBridge();
+  if (bridge) {
     try {
-      return await window.QwenCodeBridge.httpRequest(options);
+      return await bridge.httpRequest(options);
     } catch (err: any) {
       return { status: -1, body: '', error: err.message };
     }
@@ -274,7 +307,7 @@ export async function nativeHttpRequest(options: {
 }
 
 // ==========================================
-// Web Search & Scrape (Fixed - Uses native HTTP)
+// Web Search & Scrape (Uses native HTTP)
 // ==========================================
 
 export async function webSearch(query: string, numResults: number = 10): Promise<Array<{ title: string; url: string; snippet: string }>> {
@@ -310,7 +343,7 @@ export async function webSearch(query: string, numResults: number = 10): Promise
     }
   }
   
-  // Final fallback: try Google via curl
+  // Final fallback: try Google via native HTTP
   try {
     const googleResult = await nativeHttpRequest({
       url: `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${numResults}`,
@@ -335,7 +368,6 @@ export async function webSearch(query: string, numResults: number = 10): Promise
 function parseDuckDuckGoHtml(html: string, numResults: number): Array<{ title: string; url: string; snippet: string }> {
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   
-  // Parse DuckDuckGo HTML results
   const resultRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi;
   const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>(.*?)<\/a>/gi;
   
@@ -354,7 +386,6 @@ function parseDuckDuckGoHtml(html: string, numResults: number): Array<{ title: s
     results.push({ title, url, snippet: '' });
   }
   
-  // Extract snippets
   let i = 0;
   while ((match = snippetRegex.exec(html)) !== null && i < results.length) {
     results[i].snippet = match[1].replace(/<[^>]+>/g, '').trim();
@@ -367,7 +398,6 @@ function parseDuckDuckGoHtml(html: string, numResults: number): Array<{ title: s
 function parseGoogleHtml(html: string, numResults: number): Array<{ title: string; url: string; snippet: string }> {
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   
-  // Parse Google search results
   const divRegex = /<div[^>]*class="[^"]*g[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
   let match;
   while ((match = divRegex.exec(html)) !== null && results.length < numResults) {
@@ -379,7 +409,6 @@ function parseGoogleHtml(html: string, numResults: number): Array<{ title: strin
     }
   }
   
-  // Fallback: simpler regex for Google
   if (results.length === 0) {
     const linkRegex = /<a[^>]*href="\/url\?q=([^&"]+)&[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
     while ((match = linkRegex.exec(html)) !== null && results.length < numResults) {
@@ -469,6 +498,8 @@ export async function executeToolCall(
   params: Record<string, any>
 ): Promise<{ output: string; error?: string }> {
   try {
+    const bridge = getBridge();
+    
     switch (toolName as ToolType) {
       // === Shell & Code ===
       case 'shell': {
@@ -579,7 +610,7 @@ export async function executeToolCall(
         }
       }
       
-      // === Web Tools (Fixed) ===
+      // === Web Tools ===
       case 'web_fetch': {
         try {
           const result = await nativeHttpRequest({
@@ -590,7 +621,6 @@ export async function executeToolCall(
           });
           
           if (result.error) {
-            // Try shell curl as fallback
             if (isNative()) {
               const shellResult = await executeShell(`curl -s -L "${params.url}" 2>/dev/null`, 20);
               if (shellResult.exitCode === 0 && shellResult.stdout) {
@@ -677,11 +707,11 @@ export async function executeToolCall(
       
       // === SMS ===
       case 'send_sms': {
-        if (!window.QwenCodeBridge?.sendSms) {
+        if (!bridge?.sendSms) {
           return { output: '', error: 'SMS not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.sendSms(params.phone_number, params.message);
+          const result = await bridge.sendSms({ phoneNumber: params.phone_number, message: params.message });
           if (result.error) return { output: '', error: result.error };
           return { output: `SMS sent to ${params.phone_number}` };
         } catch (err: any) {
@@ -690,11 +720,11 @@ export async function executeToolCall(
       }
       
       case 'read_sms': {
-        if (!window.QwenCodeBridge?.readSms) {
+        if (!bridge?.readSms) {
           return { output: '', error: 'SMS not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.readSms(params.limit || 20, params.phone_number);
+          const result = await bridge.readSms({ limit: params.limit || 20, phoneNumber: params.phone_number });
           if (result.error) return { output: '', error: result.error };
           const formatted = result.value.map((sms: any) => 
             `[${sms.type === 'received' ? 'IN' : 'OUT'}] ${sms.address}: ${sms.body} (${new Date(sms.date).toLocaleString()})`
@@ -707,11 +737,11 @@ export async function executeToolCall(
       
       // === WhatsApp ===
       case 'send_whatsapp': {
-        if (!window.QwenCodeBridge?.sendWhatsApp) {
+        if (!bridge?.sendWhatsApp) {
           return { output: '', error: 'WhatsApp not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.sendWhatsApp(params.phone_number || '', params.message);
+          const result = await bridge.sendWhatsApp({ phoneNumber: params.phone_number || '', message: params.message });
           if (result.error) return { output: '', error: result.error };
           return { output: `WhatsApp opened${params.phone_number ? ` for ${params.phone_number}` : ''}. User must press send.${result.note ? ' ' + result.note : ''}` };
         } catch (err: any) {
@@ -721,11 +751,11 @@ export async function executeToolCall(
       
       // === Phone ===
       case 'make_call': {
-        if (!window.QwenCodeBridge?.makeCall) {
+        if (!bridge?.makeCall) {
           return { output: '', error: 'Phone not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.makeCall(params.phone_number);
+          const result = await bridge.makeCall({ phoneNumber: params.phone_number });
           if (result.error) return { output: '', error: result.error };
           return { output: `Calling ${params.phone_number}${result.note ? '. ' + result.note : ''}` };
         } catch (err: any) {
@@ -734,11 +764,11 @@ export async function executeToolCall(
       }
       
       case 'read_call_log': {
-        if (!window.QwenCodeBridge?.readCallLog) {
+        if (!bridge?.readCallLog) {
           return { output: '', error: 'Call log not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.readCallLog(params.limit || 20);
+          const result = await bridge.readCallLog({ limit: params.limit || 20 });
           if (result.error) return { output: '', error: result.error };
           const formatted = result.value.map((call: any) => 
             `[${call.type}] ${call.name || call.number} - Duration: ${call.duration}s (${new Date(call.date).toLocaleString()})`
@@ -751,11 +781,11 @@ export async function executeToolCall(
       
       // === Contacts ===
       case 'read_contacts': {
-        if (!window.QwenCodeBridge?.readContacts) {
+        if (!bridge?.readContacts) {
           return { output: '', error: 'Contacts not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.readContacts(params.limit || 50, params.search || '');
+          const result = await bridge.readContacts({ limit: params.limit || 50, search: params.search || '' });
           if (result.error) return { output: '', error: result.error };
           const formatted = result.value.map((c: any) => 
             `${c.name}: ${(c.phones || []).join(', ')}`
@@ -768,11 +798,11 @@ export async function executeToolCall(
       
       // === Apps ===
       case 'launch_app': {
-        if (!window.QwenCodeBridge?.launchApp) {
+        if (!bridge?.launchApp) {
           return { output: '', error: 'App launch not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.launchApp(params.package_name, params.action || '', params.data || '');
+          const result = await bridge.launchApp({ packageName: params.package_name, action: params.action || '', data: params.data || '' });
           if (result.error) return { output: '', error: result.error };
           return { output: `App launched: ${params.package_name}` };
         } catch (err: any) {
@@ -781,11 +811,11 @@ export async function executeToolCall(
       }
       
       case 'list_apps': {
-        if (!window.QwenCodeBridge?.listInstalledApps) {
+        if (!bridge?.listInstalledApps) {
           return { output: '', error: 'App listing not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.listInstalledApps();
+          const result = await bridge.listInstalledApps();
           if (result.error) return { output: '', error: result.error };
           const userApps = (result.value || []).filter((a: any) => a.isUser);
           const formatted = userApps.map((a: any) => `${a.name} (${a.packageName})`).join('\n');
@@ -797,11 +827,11 @@ export async function executeToolCall(
       
       // === Accessibility (UI Automation) ===
       case 'read_screen': {
-        if (!window.QwenCodeBridge?.accessibilityReadScreen) {
+        if (!bridge?.accessibilityReadScreen) {
           return { output: '', error: 'Accessibility not available. Enable it in Settings > Accessibility > Qwen Code' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilityReadScreen();
+          const result = await bridge.accessibilityReadScreen();
           if (result.error) return { output: '', error: result.error };
           let output = `Current App: ${result.packageName || 'unknown'}\n\nScreen Text:\n${result.text}`;
           return { output };
@@ -811,11 +841,11 @@ export async function executeToolCall(
       }
       
       case 'click_text': {
-        if (!window.QwenCodeBridge?.accessibilityClickText) {
+        if (!bridge?.accessibilityClickText) {
           return { output: '', error: 'Accessibility not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilityClickText(params.text, params.exact_match || false);
+          const result = await bridge.accessibilityClickText({ text: params.text, exactMatch: params.exact_match || false });
           if (result.error) return { output: '', error: result.error };
           return { output: result.value ? `Clicked on "${params.text}"` : 'Could not click' };
         } catch (err: any) {
@@ -824,11 +854,11 @@ export async function executeToolCall(
       }
       
       case 'click_at': {
-        if (!window.QwenCodeBridge?.accessibilityClickAt) {
+        if (!bridge?.accessibilityClickAt) {
           return { output: '', error: 'Accessibility not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilityClickAt(params.x, params.y);
+          const result = await bridge.accessibilityClickAt({ x: params.x, y: params.y });
           if (result.error) return { output: '', error: result.error };
           return { output: result.value ? `Clicked at (${params.x}, ${params.y})` : 'Could not click' };
         } catch (err: any) {
@@ -837,11 +867,11 @@ export async function executeToolCall(
       }
       
       case 'type_text': {
-        if (!window.QwenCodeBridge?.accessibilityTypeText) {
+        if (!bridge?.accessibilityTypeText) {
           return { output: '', error: 'Accessibility not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilityTypeText(params.text);
+          const result = await bridge.accessibilityTypeText({ text: params.text });
           if (result.error) return { output: '', error: result.error };
           return { output: result.value ? `Typed text` : 'Could not type' };
         } catch (err: any) {
@@ -850,15 +880,15 @@ export async function executeToolCall(
       }
       
       case 'swipe': {
-        if (!window.QwenCodeBridge?.accessibilitySwipe) {
+        if (!bridge?.accessibilitySwipe) {
           return { output: '', error: 'Accessibility not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilitySwipe(
-            params.start_x || 0, params.start_y || 0, 
-            params.end_x || 0, params.end_y || 0, 
-            params.duration || 300
-          );
+          const result = await bridge.accessibilitySwipe({
+            startX: params.start_x || 0, startY: params.start_y || 0,
+            endX: params.end_x || 0, endY: params.end_y || 0,
+            duration: params.duration || 300
+          });
           if (result.error) return { output: '', error: result.error };
           return { output: result.value ? 'Swipe performed' : 'Could not swipe' };
         } catch (err: any) {
@@ -867,11 +897,11 @@ export async function executeToolCall(
       }
       
       case 'press_back': {
-        if (!window.QwenCodeBridge?.accessibilityPressBack) {
+        if (!bridge?.accessibilityPressBack) {
           return { output: '', error: 'Accessibility not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilityPressBack();
+          const result = await bridge.accessibilityPressBack();
           return { output: result.value ? 'Pressed back' : 'Could not press back' };
         } catch (err: any) {
           return { output: '', error: err.message };
@@ -879,11 +909,11 @@ export async function executeToolCall(
       }
       
       case 'press_home': {
-        if (!window.QwenCodeBridge?.accessibilityPressHome) {
+        if (!bridge?.accessibilityPressHome) {
           return { output: '', error: 'Accessibility not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.accessibilityPressHome();
+          const result = await bridge.accessibilityPressHome();
           return { output: result.value ? 'Pressed home' : 'Could not press home' };
         } catch (err: any) {
           return { output: '', error: err.message };
@@ -892,11 +922,11 @@ export async function executeToolCall(
       
       // === Notifications ===
       case 'read_notifications': {
-        if (!window.QwenCodeBridge?.readNotifications) {
+        if (!bridge?.readNotifications) {
           return { output: '', error: 'Notification access not available. Enable it in Settings > Apps > Special App Access > Notification Access > Qwen Code' };
         }
         try {
-          const result = await window.QwenCodeBridge.readNotifications(params.limit || 20);
+          const result = await bridge.readNotifications({ limit: params.limit || 20 });
           if (result.error) return { output: '', error: result.error };
           const formatted = (result.value || []).map((n: any) => 
             `[${n.appName}] ${n.title || ''}: ${n.text || ''}${n.bigText ? '\n  ' + n.bigText : ''}`
@@ -908,11 +938,11 @@ export async function executeToolCall(
       }
       
       case 'dismiss_notification': {
-        if (!window.QwenCodeBridge?.dismissNotification) {
+        if (!bridge?.dismissNotification) {
           return { output: '', error: 'Notification access not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.dismissNotification(params.key);
+          const result = await bridge.dismissNotification({ key: params.key });
           return { output: result.value ? 'Notification dismissed' : 'Could not dismiss' };
         } catch (err: any) {
           return { output: '', error: err.message };
@@ -921,11 +951,11 @@ export async function executeToolCall(
       
       // === Clipboard ===
       case 'clipboard_read': {
-        if (!window.QwenCodeBridge?.clipboardRead) {
+        if (!bridge?.clipboardRead) {
           return { output: '', error: 'Clipboard not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.clipboardRead();
+          const result = await bridge.clipboardRead();
           return { output: result.value || '(clipboard is empty)' };
         } catch (err: any) {
           return { output: '', error: err.message };
@@ -933,11 +963,11 @@ export async function executeToolCall(
       }
       
       case 'clipboard_write': {
-        if (!window.QwenCodeBridge?.clipboardWrite) {
+        if (!bridge?.clipboardWrite) {
           return { output: '', error: 'Clipboard not available in this environment' };
         }
         try {
-          const result = await window.QwenCodeBridge.clipboardWrite(params.text);
+          const result = await bridge.clipboardWrite({ text: params.text });
           return { output: result.value ? 'Text copied to clipboard' : 'Failed to copy' };
         } catch (err: any) {
           return { output: '', error: err.message };
@@ -946,13 +976,12 @@ export async function executeToolCall(
       
       // === Device Info ===
       case 'get_device_info': {
-        if (!window.QwenCodeBridge?.getDeviceInfo) {
-          // Fallback via shell
+        if (!bridge?.getDeviceInfo) {
           const result = await executeShell('echo "Manufacturer: $(getprop ro.product.manufacturer)\nModel: $(getprop ro.product.model)\nAndroid: $(getprop ro.build.version.release)\nSDK: $(getprop ro.build.version.sdk)"', 5);
           return { output: result.stdout || 'Device info not available' };
         }
         try {
-          const result = await window.QwenCodeBridge.getDeviceInfo();
+          const result = await bridge.getDeviceInfo();
           const formatted = `Device: ${result.manufacturer} ${result.model}\nAndroid: ${result.androidVersion} (SDK ${result.sdkVersion})\nBrand: ${result.brand}\nRooted: ${result.isRooted ? 'Yes' : 'No'}\nStorage: ${Math.round(result.freeStorage / 1024 / 1024 / 1024)}GB free of ${Math.round(result.totalStorage / 1024 / 1024 / 1024)}GB`;
           return { output: formatted };
         } catch (err: any) {
@@ -961,11 +990,11 @@ export async function executeToolCall(
       }
       
       case 'show_toast': {
-        if (!window.QwenCodeBridge?.showToast) {
+        if (!bridge?.showToast) {
           return { output: 'Toast not available in this environment' };
         }
         try {
-          await window.QwenCodeBridge.showToast(params.message);
+          await bridge.showToast({ message: params.message });
           return { output: 'Toast shown' };
         } catch (err: any) {
           return { output: '', error: err.message };
@@ -999,10 +1028,15 @@ async function executeCodeFile(language: string, code: string, timeout: number =
   const ext = extensions[language.toLowerCase()] || 'txt';
   const runner = commands[language.toLowerCase()] || language;
   const homeDir = await getHomeDir();
-  const tmpFile = `${homeDir}/.qwencode_tmp_${Date.now()}.${ext}`;
+  const tmpFile = `${homeDir}/.qwen_tmp_code_${Date.now()}.${ext}`;
   
-  await writeFile(tmpFile, code);
-  const result = await executeShell(`${runner} "${tmpFile}"`, timeout);
-  await executeShell(`rm -f "${tmpFile}"`, 5);
-  return result;
+  try {
+    await writeFile(tmpFile, code);
+    const result = await executeShell(`${runner} "${tmpFile}"`, timeout);
+    await deleteFile(tmpFile, false);
+    return result;
+  } catch (err: any) {
+    try { await deleteFile(tmpFile, false); } catch {}
+    return { stdout: '', stderr: err.message, exitCode: -1 };
+  }
 }

@@ -2,15 +2,19 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { isNative } from '../services/bridge';
 
 // Capacitor plugin import
-import { Capacitor } from '@capacitor/core';
+import { registerPlugin, Capacitor } from '@capacitor/core';
 
 interface ZAIBrowserProps {
   config: any;
   updateConfig: (updates: any) => void;
 }
 
-// Access the ZAIWebView Capacitor plugin
-const ZAIWebView = (Capacitor as any).Plugins?.ZAIWebView || null;
+// Register the ZAIWebView Capacitor plugin properly
+interface ZAIWebViewPlugin {
+  openWebView(options: { url: string; mode?: string }): Promise<{ value: boolean; error?: string }>;
+  closeWebView(): Promise<{ value: boolean }>;
+}
+const ZAIWebView = registerPlugin<ZAIWebViewPlugin>('ZAIWebView');
 
 // Z.ai URLs
 const ZAI_CHAT_URL = 'https://chat.z.ai';
@@ -33,11 +37,8 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
     { name: 'BigModel Console', url: ZAI_API_URL, icon: '📊', desc: 'Consola de BigModel' },
   ];
 
-  // Open URL using the best available method:
-  // 1. Chrome Custom Tabs (default - uses real Chrome engine, most compatible)
-  // 2. Native WebView fallback (if Custom Tabs unavailable)
-  // 3. External browser (last resort)
-  const navigateTo = useCallback((url: string, mode: string = 'auto') => {
+  // Open URL using the best available method
+  const navigateTo = useCallback(async (url: string, mode: string = 'auto') => {
     setBrowserUrl(url);
     setUrlInput(url);
     setBookmarkOpen(false);
@@ -45,15 +46,10 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
 
     if (isNative()) {
       try {
-        if (ZAIWebView) {
-          ZAIWebView.openWebView({ url, mode });
-        } else if (window.QwenCodeBridge?.openWebView) {
-          window.QwenCodeBridge.openWebView(url);
-        }
+        await ZAIWebView.openWebView({ url, mode });
       } catch (e) {
         console.error('Failed to open browser:', e);
       }
-      // Don't show the internal view for native - the native overlay handles it
       setShowWebView(true);
       setTimeout(() => setOpening(false), 1000);
     } else {
@@ -74,28 +70,23 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
 
   // Extract API key from Z.ai and save to config
   const extractApiKey = useCallback(async () => {
-    if (window.QwenCodeBridge?.clipboardRead) {
-      try {
-        const result = await window.QwenCodeBridge.clipboardRead();
-        const clipboardText = result.value || '';
-        const apiKeyMatch = clipboardText.match(/[a-f0-9]{32}\.[a-zA-Z0-9]+/);
-        if (apiKeyMatch) {
-          const extractedKey = apiKeyMatch[0];
-          const providers = config.providers.map((p: any) =>
-            p.id === 'zai' ? { ...p, apiKey: extractedKey } : p
-          );
-          updateConfig({ providers, activeProvider: 'zai' });
-          alert(`API Key encontrada y guardada: ${extractedKey.substring(0, 10)}...`);
-          return;
-        }
-      } catch (e) { }
+    // Prompt user to paste their API key
+    const clipboardText = prompt('Pega tu API Key de Z.ai aqui:') || '';
+    const apiKeyMatch = clipboardText.match(/[a-f0-9]{32}\.[a-zA-Z0-9]+/);
+    if (apiKeyMatch) {
+      const extractedKey = apiKeyMatch[0];
+      const providers = config.providers.map((p: any) =>
+        p.id === 'zai' ? { ...p, apiKey: extractedKey } : p
+      );
+      updateConfig({ providers, activeProvider: 'zai' });
+      alert(`API Key encontrada y guardada: ${extractedKey.substring(0, 10)}...`);
+      return;
     }
-    alert('No se encontro API key en el portapapeles. Copia tu API key desde Z.ai y presiona este boton.');
+    alert('No se encontro API key en el texto. Copia tu API key desde Z.ai y presiona este boton.');
   }, [config, updateConfig]);
 
   // Check if native on mount
   useEffect(() => {
-    // Auto-open Z.ai chat on native
     if (isNative()) {
       // Don't auto-open, let user choose
     }
@@ -323,7 +314,7 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
               ))}
             </div>
 
-            {/* Main CTA - Chrome Custom Tabs (most reliable) */}
+            {/* Main CTA */}
             <button
               onClick={() => navigateTo(ZAI_CHAT_URL, 'customtabs')}
               style={{
@@ -345,52 +336,6 @@ export default function ZAIBrowser({ config, updateConfig }: ZAIBrowserProps) {
               }}
             >
               Abrir Z.ai Chat
-            </button>
-
-            {/* Alternative: WebView */}
-            <button
-              onClick={() => navigateTo(ZAI_CHAT_URL, 'webview')}
-              style={{
-                width: '100%',
-                maxWidth: 400,
-                padding: '14px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-md)',
-                color: 'var(--text-primary)',
-                cursor: 'pointer',
-                fontSize: 14,
-                fontWeight: 500,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 'var(--space-sm)',
-              }}
-            >
-              Abrir en WebView integrado
-            </button>
-
-            {/* Alternative: External browser */}
-            <button
-              onClick={() => navigateTo(ZAI_CHAT_URL, 'browser')}
-              style={{
-                width: '100%',
-                maxWidth: 400,
-                padding: '14px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-md)',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 400,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 'var(--space-sm)',
-              }}
-            >
-              Abrir en navegador externo
             </button>
 
             {/* API Key extraction */}

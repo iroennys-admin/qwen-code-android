@@ -1,6 +1,6 @@
 {
   "name": "qwen-code-android",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "description": "Qwen Code AI Agent for Android v3.1 - Full Device Control, WhatsApp, SMS, Calls, UI Automation, Z.ai Browser, Fluent Design",
   "type": "module",
   "scripts": {

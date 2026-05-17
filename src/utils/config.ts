@@ -57,7 +57,24 @@ const MODAL_MODELS: ModelInfo[] = [
   { id: 'glm-5.1', name: 'GLM-5.1 (Free)', contextLength: 203000 },
 ];
 
+const OPENCODE_MODELS: ModelInfo[] = [
+  { id: 'big-pickle', name: 'Big Pickle (Free)', contextLength: 200000 },
+  { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash (Free)', contextLength: 131072 },
+  { id: 'minimax-m2.5-free', name: 'MiniMax M2.5 (Free)', contextLength: 131072 },
+  { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super (Free)', contextLength: 131072 },
+  { id: 'qwen3.6-plus-free', name: 'Qwen3.6 Plus (Free)', contextLength: 131072 },
+];
+
 export const DEFAULT_PROVIDERS: Provider[] = [
+  {
+    id: 'opencode',
+    name: 'OpenCode Zen (FREE - No API Key)',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    proxyBaseUrl: '',
+    apiKey: '',
+    models: OPENCODE_MODELS,
+    enabled: true,
+  },
   {
     id: 'nvidia',
     name: 'NVIDIA NIM (GLM-5.1 FREE)',
@@ -243,9 +260,9 @@ The user communicates in Spanish. Respond in Spanish but write code, file names,
 
 export const DEFAULT_CONFIG: AppConfig = {
   providers: DEFAULT_PROVIDERS,
-  activeProvider: 'nvidia',
-  activeModel: 'z-ai/glm-5.1',
-  proxyEnabled: true,
+  activeProvider: 'opencode',
+  activeModel: 'big-pickle',
+  proxyEnabled: false,
   proxyBaseUrl: CUBA_PROXY_BASE,
   streaming: true,
   temperature: 0.7,

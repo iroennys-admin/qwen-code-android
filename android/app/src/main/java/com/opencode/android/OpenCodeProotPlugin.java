@@ -65,7 +65,7 @@ public class OpenCodeProotPlugin extends Plugin {
         Thread stdoutThread;
         Thread stderrThread;
         volatile boolean running = true;
-        OpenCodeBridgePlugin plugin;
+        OpenCodeProotPlugin plugin;
 
         void destroy() {
             running = false;
@@ -80,9 +80,14 @@ public class OpenCodeProotPlugin extends Plugin {
                 JSObject data = new JSObject();
                 data.put("sessionId", sessionId);
                 data.put("type", "exit");
-                plugin.notifyListeners("opencode-output", data);
+                plugin.sendEvent("opencode-output", data);
             }
         }
+    }
+
+    // Public wrapper for protected notifyListeners
+    public void sendEvent(String eventName, JSObject data) {
+        notifyListeners(eventName, data);
     }
 
     @Override

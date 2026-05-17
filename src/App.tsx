@@ -11,7 +11,7 @@ import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
 import ZAIBrowser from './components/ZAIBrowser';
 
-const CONFIG_VERSION = 6;
+const CONFIG_VERSION = 7;
 
 function loadConfig(): AppConfig {
   try {

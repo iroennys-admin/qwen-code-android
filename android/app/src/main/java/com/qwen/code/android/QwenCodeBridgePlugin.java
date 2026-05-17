@@ -36,6 +36,7 @@ import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -638,96 +639,131 @@ public class QwenCodeBridgePlugin extends Plugin {
         String method = call.getString("method", "GET");
         String body = call.getString("body", "");
         JSObject headers = call.getObject("headers", new JSObject());
-        int timeoutMs = call.getInt("timeout", 30000);
+        int timeoutSec = call.getInt("timeout", 120); // Timeout in SECONDS (JS sends seconds)
         boolean followRedirects = call.getBoolean("followRedirects", true);
+        int retryCount = call.getInt("retries", 3); // Number of retries for network errors
         
         if (urlStr.isEmpty()) {
             call.reject("URL is required");
             return;
         }
         
+        // Convert seconds to milliseconds for Java HttpURLConnection
+        int timeoutMs = timeoutSec * 1000;
+        // Minimum 30 seconds connect timeout, 60 seconds read timeout for Cuba/slow connections
+        int connectTimeoutMs = Math.max(timeoutMs, 30000);
+        int readTimeoutMs = Math.max(timeoutMs, 60000);
+        
+        final int finalConnectTimeout = connectTimeoutMs;
+        final int finalReadTimeout = readTimeoutMs;
+        final int finalRetries = retryCount;
+        
         new Thread(() -> {
-            try {
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod(method);
-                conn.setConnectTimeout(timeoutMs);
-                conn.setReadTimeout(timeoutMs);
-                conn.setInstanceFollowRedirects(followRedirects);
-                
-                // Set default headers for web scraping
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36");
-                conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-                conn.setRequestProperty("Accept-Language", "en-US,en;q=0.5");
-                conn.setRequestProperty("Accept-Encoding", "identity"); // Avoid gzip issues
-                
-                // Apply custom headers
-                Iterator<String> keys = headers.keys();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    conn.setRequestProperty(key, headers.getString(key));
-                }
-                
-                // Write body if present
-                if (!body.isEmpty() && (method.equals("POST") || method.equals("PUT") || method.equals("PATCH"))) {
-                    conn.setDoOutput(true);
-                    byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
-                    conn.setRequestProperty("Content-Length", String.valueOf(bodyBytes.length));
-                    conn.getOutputStream().write(bodyBytes);
-                }
-                
-                int responseCode = conn.getResponseCode();
-                
-                BufferedReader reader;
-                if (responseCode >= 200 && responseCode < 400) {
-                    reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                } else {
-                    java.io.InputStream errStream = conn.getErrorStream();
-                    if (errStream != null) {
-                        reader = new BufferedReader(new InputStreamReader(errStream, StandardCharsets.UTF_8));
-                    } else {
+            Exception lastError = null;
+            
+            for (int attempt = 0; attempt < finalRetries; attempt++) {
+                try {
+                    if (attempt > 0) {
+                        // Exponential backoff: 2s, 4s, 8s...
+                        Thread.sleep(Math.min(2000 * (1 << attempt), 10000));
+                        Log.i(TAG, "HTTP retry attempt " + (attempt + 1) + " for " + urlStr);
+                    }
+                    
+                    URL url = new URL(urlStr);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod(method);
+                    conn.setConnectTimeout(finalConnectTimeout);
+                    conn.setReadTimeout(finalReadTimeout);
+                    conn.setInstanceFollowRedirects(followRedirects);
+                    
+                    // Set default headers
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36");
+                    conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                    conn.setRequestProperty("Accept-Language", "en-US,en;q=0.5");
+                    conn.setRequestProperty("Accept-Encoding", "identity");
+                    
+                    // Apply custom headers (override defaults)
+                    Iterator<String> keys = headers.keys();
+                    while (keys.hasNext()) {
+                        String key = keys.next();
+                        conn.setRequestProperty(key, headers.getString(key));
+                    }
+                    
+                    // Write body if present
+                    if (!body.isEmpty() && (method.equals("POST") || method.equals("PUT") || method.equals("PATCH"))) {
+                        conn.setDoOutput(true);
+                        byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
+                        conn.setRequestProperty("Content-Length", String.valueOf(bodyBytes.length));
+                        conn.getOutputStream().write(bodyBytes);
+                        conn.getOutputStream().flush();
+                    }
+                    
+                    int responseCode = conn.getResponseCode();
+                    
+                    BufferedReader reader;
+                    if (responseCode >= 200 && responseCode < 400) {
                         reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    } else {
+                        java.io.InputStream errStream = conn.getErrorStream();
+                        if (errStream != null) {
+                            reader = new BufferedReader(new InputStreamReader(errStream, StandardCharsets.UTF_8));
+                        } else {
+                            reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                        }
+                    }
+                    
+                    StringBuilder response = new StringBuilder();
+                    char[] buffer = new char[8192];
+                    int totalRead = 0;
+                    int maxResponseSize = 2 * 1024 * 1024; // 2MB max
+                    int charsRead;
+                    
+                    while ((charsRead = reader.read(buffer)) != -1 && totalRead < maxResponseSize) {
+                        response.append(buffer, 0, charsRead);
+                        totalRead += charsRead;
+                    }
+                    reader.close();
+                    
+                    if (totalRead >= maxResponseSize) {
+                        response.append("\n... [Response truncated at 2MB]");
+                    }
+                    
+                    JSObject responseHeaders = new JSObject();
+                    for (String key : conn.getHeaderFields().keySet()) {
+                        if (key != null) {
+                            responseHeaders.put(key, conn.getHeaderField(key));
+                        }
+                    }
+                    
+                    JSObject ret = new JSObject();
+                    ret.put("status", responseCode);
+                    ret.put("body", response.toString());
+                    ret.put("headers", responseHeaders);
+                    ret.put("url", conn.getURL().toString());
+                    
+                    new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
+                    return; // Success, exit method
+                    
+                } catch (Exception e) {
+                    lastError = e;
+                    Log.w(TAG, "HTTP attempt " + (attempt + 1) + " failed: " + e.getMessage());
+                    
+                    // Don't retry on client errors (4xx) - only retry on network/connection issues
+                    if (e.getMessage() != null && (e.getMessage().contains("403") || e.getMessage().contains("401") || e.getMessage().contains("400"))) {
+                        break;
                     }
                 }
-                
-                StringBuilder response = new StringBuilder();
-                char[] buffer = new char[8192];
-                int totalRead = 0;
-                int maxResponseSize = 1024 * 1024; // 1MB max (increased from 512KB)
-                int charsRead;
-                
-                while ((charsRead = reader.read(buffer)) != -1 && totalRead < maxResponseSize) {
-                    response.append(buffer, 0, charsRead);
-                    totalRead += charsRead;
-                }
-                reader.close();
-                
-                if (totalRead >= maxResponseSize) {
-                    response.append("\n... [Response truncated at 1MB]");
-                }
-                
-                JSObject responseHeaders = new JSObject();
-                for (String key : conn.getHeaderFields().keySet()) {
-                    if (key != null) {
-                        responseHeaders.put(key, conn.getHeaderField(key));
-                    }
-                }
-                
-                JSObject ret = new JSObject();
-                ret.put("status", responseCode);
-                ret.put("body", response.toString());
-                ret.put("headers", responseHeaders);
-                ret.put("url", conn.getURL().toString());
-                
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                
-            } catch (Exception e) {
-                JSObject ret = new JSObject();
-                ret.put("status", -1);
-                ret.put("body", "");
-                ret.put("error", "HTTP error: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
             }
+            
+            // All retries failed
+            String errorMsg = lastError != null ? lastError.getMessage() : "Unknown error";
+            Log.e(TAG, "HTTP request failed after " + finalRetries + " attempts: " + errorMsg);
+            
+            JSObject ret = new JSObject();
+            ret.put("status", -1);
+            ret.put("body", "");
+            ret.put("error", "Network error: " + errorMsg + " (tried " + finalRetries + "x)");
+            new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
         }).start();
     }
 

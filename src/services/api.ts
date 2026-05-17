@@ -14,8 +14,9 @@ interface HttpBridgePlugin {
     method?: string;
     body?: string;
     headers?: Record<string, string>;
-    timeout?: number;
+    timeout?: number; // in SECONDS
     followRedirects?: boolean;
+    retries?: number; // number of retry attempts
   }): Promise<{
     status: number;
     body: string;
@@ -51,8 +52,9 @@ async function apiRequest(
         method,
         headers,
         body: body || undefined,
-        timeout: 120,
+        timeout: 180, // 180 seconds (Cuba/slow connections need long timeouts)
         followRedirects: true,
+        retries: 3, // Retry 3 times on network errors
       });
       
       // Check for native error

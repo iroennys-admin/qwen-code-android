@@ -38,8 +38,9 @@ interface QwenCodeBridgePlugin {
     method?: string;
     body?: string;
     headers?: Record<string, string>;
-    timeout?: number;
+    timeout?: number; // in SECONDS
     followRedirects?: boolean;
+    retries?: number;
   }): Promise<{
     status: number;
     body: string;
@@ -280,13 +281,18 @@ export async function nativeHttpRequest(options: {
   method?: string;
   body?: string;
   headers?: Record<string, string>;
-  timeout?: number;
+  timeout?: number; // in SECONDS
   followRedirects?: boolean;
+  retries?: number;
 }): Promise<{ status: number; body: string; headers?: Record<string, string>; url?: string; error?: string }> {
   const bridge = getBridge();
   if (bridge) {
     try {
-      return await bridge.httpRequest(options);
+      return await bridge.httpRequest({
+        ...options,
+        timeout: options.timeout || 180, // Default 180s for slow connections (Cuba)
+        retries: options.retries || 3,
+      });
     } catch (err: any) {
       return { status: -1, body: '', error: err.message };
     }

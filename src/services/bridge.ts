@@ -1,5 +1,6 @@
 import type { ShellResult, ToolType } from '../types';
 import { registerPlugin, Capacitor } from '@capacitor/core';
+import { OpenCodeBridge, isOpenCodeAvailable } from './opencode-bridge';
 
 // ==========================================
 // Capacitor Plugin Interface & Registration
@@ -1004,6 +1005,70 @@ export async function executeToolCall(
           return { output: 'Toast shown' };
         } catch (err: any) {
           return { output: '', error: err.message };
+        }
+      }
+      
+      // === OpenCode Tools ===
+      case 'opencode_setup': {
+        if (!isOpenCodeAvailable()) {
+          return { output: '', error: 'OpenCode is only available in the native Android app' };
+        }
+        try {
+          const reinstall = params.reinstall as boolean;
+          if (reinstall) {
+            const result = await OpenCodeBridge.fullSetup();
+            return { output: result.value ? 'OpenCode environment setup complete (reinstalled)' : `Setup failed: ${result.error || 'Unknown error'}`, error: result.value ? undefined : result.error };
+          }
+          // Check current status first
+          const status = await OpenCodeBridge.checkSetup();
+          if (status.prootInstalled && status.ubuntuInstalled && status.opencodeInstalled) {
+            return { output: 'OpenCode environment is already set up. Use reinstall: true to force reinstall.' };
+          }
+          const result = await OpenCodeBridge.fullSetup();
+          return { output: result.value ? 'OpenCode environment setup complete. proot-distro, Ubuntu, and OpenCode are installed.' : `Setup failed: ${result.error || 'Unknown error'}`, error: result.value ? undefined : result.error };
+        } catch (err: any) {
+          return { output: '', error: `OpenCode setup failed: ${err.message}` };
+        }
+      }
+      
+      case 'opencode_run': {
+        if (!isOpenCodeAvailable()) {
+          return { output: '', error: 'OpenCode is only available in the native Android app' };
+        }
+        try {
+          const command = params.command as string;
+          const timeout = (params.timeout as number) || 60;
+          if (!command) return { output: '', error: 'No command provided' };
+          const result = await OpenCodeBridge.executeProotCommand({ command, timeout });
+          let output = '';
+          if (result.stdout) output += result.stdout;
+          if (result.stderr) output += (output ? '\n[stderr]\n' : '[stderr]\n') + result.stderr;
+          if (result.exitCode !== 0) {
+            return { output: output || '(no output)', error: `Exit code: ${result.exitCode}` };
+          }
+          return { output: output || '(no output)' };
+        } catch (err: any) {
+          return { output: '', error: `OpenCode run failed: ${err.message}` };
+        }
+      }
+      
+      case 'opencode_status': {
+        if (!isOpenCodeAvailable()) {
+          return { output: '', error: 'OpenCode is only available in the native Android app' };
+        }
+        try {
+          const result = await OpenCodeBridge.checkSetup();
+          const lines = [
+            `proot-distro: ${result.prootInstalled ? '✅ Installed' : '❌ Not installed'}`,
+            `Ubuntu: ${result.ubuntuInstalled ? '✅ Installed' : '❌ Not installed'}`,
+            `OpenCode: ${result.opencodeInstalled ? '✅ Installed' : '❌ Not installed'}`,
+            `Setup Status: ${result.setupStatus}`,
+          ];
+          if (result.prootPath) lines.push(`proot Path: ${result.prootPath}`);
+          if (result.ubuntuRootPath) lines.push(`Ubuntu Root: ${result.ubuntuRootPath}`);
+          return { output: lines.join('\n') };
+        } catch (err: any) {
+          return { output: '', error: `Failed to check OpenCode status: ${err.message}` };
         }
       }
       

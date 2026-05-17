@@ -56,7 +56,8 @@ export type ToolType =
   | 'read_screen' | 'click_text' | 'click_at' | 'type_text' | 'swipe' | 'press_back' | 'press_home'
   | 'read_notifications' | 'dismiss_notification'
   | 'clipboard_read' | 'clipboard_write'
-  | 'get_device_info' | 'show_toast';
+  | 'get_device_info' | 'show_toast'
+  | 'opencode_setup' | 'opencode_run' | 'opencode_status';
 
 export interface ToolResult {
   toolCallId: string;
@@ -132,7 +133,24 @@ export interface ApiToolCall {
   };
 }
 
-export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings' | 'zai';
+export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings' | 'zai' | 'opencode';
+
+export type OpenCodeSetupStatus = 'not_installed' | 'installing' | 'installed' | 'error';
+
+export interface OpenCodeSetupProgress {
+  step: string;
+  progress: number; // 0-100
+  message: string;
+  error?: string;
+}
+
+export interface OpenCodeConfig {
+  setupStatus: OpenCodeSetupStatus;
+  ubuntuInstalled: boolean;
+  opencodeInstalled: boolean;
+  prootPath: string;
+  ubuntuRootPath: string;
+}
 
 /** Agent run state for UI feedback */
 export interface AgentState {

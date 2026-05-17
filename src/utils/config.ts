@@ -821,4 +821,46 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  // OpenCode Tools
+  {
+    type: 'function' as const,
+    function: {
+      name: 'opencode_setup',
+      description: 'Set up the OpenCode AI environment. Installs proot-distro, Ubuntu rootfs, and OpenCode binary. This is required before using opencode_run.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reinstall: { type: 'boolean', description: 'Force reinstall even if already installed' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'opencode_run',
+      description: 'Run a command inside the OpenCode proot Ubuntu environment. Use this to execute opencode or any Linux command.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'Command to run inside proot Ubuntu' },
+          timeout: { type: 'number', description: 'Timeout in seconds (default: 60)' },
+        },
+        required: ['command'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'opencode_status',
+      description: 'Check the OpenCode installation status. Returns whether proot, Ubuntu, and OpenCode are installed.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];

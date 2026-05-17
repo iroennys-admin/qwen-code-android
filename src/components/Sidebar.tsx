@@ -16,6 +16,7 @@ const NAV_ITEMS: Array<{ id: ViewMode; icon: string; label: string }> = [
   { id: 'chat', icon: '💬', label: 'Chat' },
   { id: 'zai', icon: '🌐', label: 'Z.ai' },
   { id: 'terminal', icon: '💻', label: 'Terminal' },
+  { id: 'opencode', icon: '🤖', label: 'OpenCode' },
   { id: 'files', icon: '📁', label: 'Archivos' },
   { id: 'settings', icon: '⚙️', label: 'Config' },
 ];
@@ -73,7 +74,7 @@ export default function Sidebar({ config, updateConfig, view, setView, open, onC
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 16 }}>Qwen Code</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI Agent v3.3</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI Agent v4.0</div>
             </div>
           </div>
         </div>

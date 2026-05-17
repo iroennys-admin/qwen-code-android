@@ -10,6 +10,7 @@ import FileExplorer from './components/FileExplorer';
 import SettingsView from './components/SettingsView';
 import WelcomeScreen from './components/WelcomeScreen';
 import ZAIBrowser from './components/ZAIBrowser';
+import OpenCodeView from './components/OpenCodeView';
 
 const CONFIG_VERSION = 7;
 
@@ -465,6 +466,9 @@ export default function App() {
           )}
           {view === 'terminal' && (
             <TerminalView config={config} />
+          )}
+          {view === 'opencode' && (
+            <OpenCodeView config={config} />
           )}
           {view === 'files' && (
             <FileExplorer config={config} />

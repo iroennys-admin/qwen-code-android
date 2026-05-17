@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(QwenCodeBridgePlugin.class);
         registerPlugin(ZAIWebViewPlugin.class);
+        registerPlugin(OpenCodeBridgePlugin.class);
         super.onCreate(savedInstanceState);
     }
     

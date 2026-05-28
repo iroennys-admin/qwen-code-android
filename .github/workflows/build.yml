@@ -3,6 +3,7 @@ name: Build OpenCode AI APK
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -11,6 +12,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -41,8 +44,7 @@ jobs:
           echo "Android SDK: $ANDROID_HOME"
 
       - name: Install npm dependencies
-        run: |
-          npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Type check (non-blocking)
         run: npx tsc --noEmit || echo "::warning::TS errors"
@@ -67,7 +69,6 @@ jobs:
       - name: Build Release APK (unsigned)
         working-directory: android
         run: ./gradlew assembleRelease --stacktrace
-        continue-on-error: true
 
       - name: List APKs
         run: find android/app/build/outputs -name "*.apk" -type f -exec ls -lh {} \;

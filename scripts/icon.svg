@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#1a1730"/>
+      <stop offset="100%" stop-color="#06070d"/>
+    </radialGradient>
+    <linearGradient id="diam" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c8cff"/>
+      <stop offset="50%" stop-color="#b384ff"/>
+      <stop offset="100%" stop-color="#5ee5d3"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7c8cff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#7c8cff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Stars -->
+  <g fill="#ffffff" opacity="0.55">
+    <circle cx="80" cy="120" r="1.5"/>
+    <circle cx="420" cy="160" r="2"/>
+    <circle cx="120" cy="380" r="1.3"/>
+    <circle cx="360" cy="380" r="1.5"/>
+    <circle cx="256" cy="80" r="2.5"/>
+    <circle cx="60" cy="280" r="1.2"/>
+    <circle cx="450" cy="320" r="1.8"/>
+  </g>
+
+  <!-- Outer halo -->
+  <circle cx="256" cy="256" r="200" fill="url(#glow)"/>
+
+  <!-- Diamond -->
+  <path d="M 256 80 L 432 256 L 256 432 L 80 256 Z" fill="url(#diam)"/>
+
+  <!-- Inner highlight -->
+  <path d="M 256 130 L 340 220 L 256 310 L 172 220 Z" fill="#ffffff" opacity="0.28"/>
+
+  <!-- Inner outline -->
+  <path d="M 256 170 L 332 256 L 256 342 L 180 256 Z" stroke="#ffffff" stroke-width="6" stroke-opacity="0.55" fill="none"/>
+</svg>

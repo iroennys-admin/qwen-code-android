@@ -141,7 +141,7 @@ export interface ApiToolCall {
   };
 }
 
-export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings' | 'about';
+export type ViewMode = 'chat' | 'zai' | 'terminal' | 'files' | 'settings' | 'about';
 
 export interface AgentState {
   status: 'idle' | 'thinking' | 'calling_tool' | 'executing' | 'waiting_approval' | 'done' | 'error';

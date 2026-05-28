@@ -21,7 +21,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     enabled: true,
     isFree: true,
     signupUrl: 'https://z.ai/manage-apikey/apikey-list',
-    notes: 'Modelos GLM gratis (flash) y de pago. OpenAI-compatible. Excelente para código.',
+    notes: 'Modelos GLM (flash gratis, otros de pago). API oficial OpenAI-compatible. Si prefieres usar chat.z.ai con tu cuenta web sin API key, abre la pestaña Z.AI en la barra inferior 🇿.',
     models: [
       { id: 'glm-4.6', name: 'GLM-4.6', contextLength: 200000, description: 'Modelo flagship Z.AI, excelente para código', supportsTools: true, supportsThinking: true },
       { id: 'glm-4.5', name: 'GLM-4.5', contextLength: 128000, supportsTools: true, supportsThinking: true },

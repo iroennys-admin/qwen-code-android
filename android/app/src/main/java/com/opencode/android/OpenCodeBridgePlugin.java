@@ -597,6 +597,26 @@ public class OpenCodeBridgePlugin extends Plugin {
     }
 
     // ==========================================
+    // In-app browser (used for Z.AI chat web view)
+    // ==========================================
+
+    @PluginMethod
+    public void openWebView(PluginCall call) {
+        final String url = call.getString("url", "https://chat.z.ai");
+        final String title = call.getString("title", "Z.AI");
+        try {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                Intent i = new Intent(getActivity(), ZaiWebActivity.class);
+                i.putExtra(ZaiWebActivity.EXTRA_URL, url);
+                i.putExtra(ZaiWebActivity.EXTRA_TITLE, title);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getActivity().startActivity(i);
+            });
+            JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
+    // ==========================================
     // Helpers
     // ==========================================
 

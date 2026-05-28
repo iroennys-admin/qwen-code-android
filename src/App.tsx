@@ -13,6 +13,7 @@ import SettingsView from './components/SettingsView';
 import TerminalView from './components/TerminalView';
 import FileExplorer from './components/FileExplorer';
 import AboutView from './components/AboutView';
+import ZaiWebView from './components/ZaiWebView';
 
 // ---------- Persistence ----------
 function loadConfig(): AppConfig {
@@ -219,6 +220,7 @@ export default function App() {
             pendingApproval={pendingApproval}
           />
         )}
+        {view === 'zai' && <ZaiWebView />}
         {view === 'terminal' && <TerminalView config={config} onConfigChange={setConfig} />}
         {view === 'files' && <FileExplorer initialPath={config.workingDir} />}
         {view === 'settings' && (
@@ -227,9 +229,12 @@ export default function App() {
         {view === 'about' && <AboutView />}
       </div>
 
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
         <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>
           <span className="ico">💬</span>Chat
+        </button>
+        <button className={view === 'zai' ? 'active' : ''} onClick={() => setView('zai')}>
+          <span className="ico">🇿</span>Z.AI
         </button>
         <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')}>
           <span className="ico">⌨️</span>Terminal

@@ -53,6 +53,14 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+    
+        <activity
+            android:name=".ZaiWebActivity"
+            android:label="Z.AI"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:launchMode="singleTask"
+            android:exported="false" />
+
     </application>
 
 </manifest>

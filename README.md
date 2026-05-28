@@ -1,101 +1,148 @@
-# Qwen Code Android 🤖📱
+# ◆ OpenCode AI for Android
 
-AI Code Agent para Android con interfaz Fluent Design, soporte multi-provider y ejecución de comandos shell.
+> AI coding agent that runs entirely on your Android phone.
+> Multi-provider, free models, real shell + filesystem + web tools, built-in `opencode` CLI in the terminal.
 
-## ✨ Características
+![Build](https://github.com/iroennys-admin/qwen-code-android/actions/workflows/build.yml/badge.svg)
 
-- 🤖 **Multi-Provider AI** - OpenRouter, NVIDIA NIM, Mistral, Grok (xAI)
-- 💻 **Ejecución de Comandos Shell** - Ejecuta comandos directamente en tu dispositivo
-- 📁 **Acceso al Sistema de Archivos** - Lee, escribe y edita archivos
-- 🌐 **Proxy para Cuba** - Soporte iql proxy por defecto para conectividad
-- ⚡ **Streaming en Tiempo Real** - Respuestas de IA en vivo
-- 🔧 **Tool Use** - Shell, file_read, file_write, file_edit, web_fetch, glob, grep
-- 🎨 **Interfaz Fluent Design** - UI futurista estilo Windows
-- 📱 **32/64 bits** - Compatible con armeabi-v7a y arm64-v8a
+---
 
-## 📥 Instalación
+## ✨ Highlights
 
-Descarga el APK desde [GitHub Releases](https://github.com/iroennys-admin/qwen-code-android/releases) o compílalo tú mismo.
+- 🤖 **15+ AI providers** — Z.AI (GLM), Groq, Cerebras, Gemini, OpenRouter, NVIDIA NIM, Mistral, DeepSeek, GitHub Models, Cohere, SambaNova, xAI Grok, OpenAI, Anthropic, custom OpenAI-compatible.
+- 🆓 **Most have free tiers** — works out of the box with GLM-4.5-Flash on Z.AI, no payment required.
+- 🛠️ **23 built-in tools** — shell, file_read/write/edit/append, list_dir, glob, grep, web_fetch, web_search (DuckDuckGo + Jina Reader), mkdir, rm, mv, cp, todo_*, memory_*, clipboard_*, notify, device_info.
+- 💻 **Real terminal** — type `opencode` for an interactive REPL inside the app (works on 32-bit ARMv7 too, all JS).
+- 📁 **File explorer + editor** baked in.
+- 🧠 **Persistent memory** + **TODOs** the agent can manage across chats.
+- 🎨 **4 themes** — Aurora, Midnight, Cyber, Classic Dark.
+- 🇨🇺 **Reverse-proxy support** for users behind geo-blocks.
+- 📱 **ARMv7 + ARM64 + x86_64** universal APK.
 
-### Descarga Directa
+---
 
-1. Ve a la sección de Releases en el repositorio
-2. Descarga el archivo `qwen-code-release-universal.apk`
-3. Instálalo en tu dispositivo Android
+## 📥 Install
 
-### Compilación desde Código Fuente
+Grab the latest APK from [Releases](https://github.com/iroennys-admin/qwen-code-android/releases) or from the [Actions](https://github.com/iroennys-admin/qwen-code-android/actions) tab → latest workflow run → `OpenCodeAI-APKs` artifact.
+
+1. Open the APK on your device.
+2. Allow "Install from unknown sources" if prompted.
+3. On first launch, grant storage permission (Settings → Apps → OpenCode AI → Permissions → Files & media → All files).
+
+---
+
+## 🔑 Setup an AI provider
+
+Open ⚙️ **Settings** → choose any free provider → tap "Get API key" → paste it.
+
+### Recommended free providers
+
+| Provider | Models (free) | Get key |
+|---|---|---|
+| 🇨🇳 **Z.AI** | GLM-4.5-Flash, GLM-4-Flash, GLM-4V-Flash (vision) | [z.ai](https://z.ai/manage-apikey/apikey-list) |
+| ⚡ **Groq** | Llama 3.3 70B, Qwen3 32B, GPT-OSS 120B, Kimi K2 | [console.groq.com](https://console.groq.com/keys) |
+| 🧠 **Cerebras** | Llama 3.3 70B, Qwen3 235B, GPT-OSS 120B | [cloud.cerebras.ai](https://cloud.cerebras.ai/) |
+| ✨ **Google Gemini** | Gemini 2.5 Pro/Flash (1M ctx, vision) | [aistudio.google.com](https://aistudio.google.com/apikey) |
+| 🔀 **OpenRouter** | 10+ free models, single key | [openrouter.ai](https://openrouter.ai/keys) |
+| 💚 **NVIDIA NIM** | DeepSeek R1/V3.1, Qwen3 Coder 480B | [build.nvidia.com](https://build.nvidia.com/) |
+| 🌪️ **Mistral** | Mistral Large, Codestral (1B tok/month) | [console.mistral.ai](https://console.mistral.ai/api-keys) |
+
+---
+
+## 💻 Terminal with `opencode` CLI
+
+Tap the **⌨️ Terminal** tab and type:
 
 ```bash
-# Clonar el repositorio
+opencode                          # interactive REPL
+opencode "list files in /sdcard"  # one-shot prompt
+opencode --provider groq          # switch provider
+opencode --model llama-3.3-70b-versatile
+opencode --list-models
+oc help                           # short alias
+```
+
+Inside the REPL:
+
+```
+/help      /exit       /clear       /reset
+/model X   /provider X /system "..."
+/models    /providers  /config      /tools
+/save chat.json   /load chat.json   /history
+```
+
+All other terminal input runs as a normal **shell** command on the device (`ls`, `pwd`, `cat`, `pkg install`, etc.).
+
+---
+
+## 🧰 Tools the agent can call
+
+| Tool | Description |
+|---|---|
+| `shell` | Run any shell command (asks approval by default) |
+| `file_read` | Read a file (with optional line range) |
+| `file_write` | Write/overwrite a file (auto-approved in safe mode) |
+| `file_edit` | Precise find-and-replace inside a file |
+| `file_append` | Append to a file |
+| `list_dir`, `glob`, `grep` | Discover files & search |
+| `mkdir`, `rm`, `mv`, `cp` | File ops |
+| `web_fetch` | Fetch a URL (HTML → readable text via Jina Reader fallback) |
+| `web_search` | DuckDuckGo HTML search, no key needed |
+| `todo_add/list/complete` | Persistent TODO list |
+| `memory_save/get` | Long-term key/value memory |
+| `clipboard_copy/read` | Read/write device clipboard |
+| `notify` | Show a toast |
+| `device_info` | Phone info, storage, ABI, root status |
+
+Approval modes: **ask** (safest), **auto_edit** (recommended), **yolo**.
+
+---
+
+## 🛠️ Build from source
+
+```bash
 git clone https://github.com/iroennys-admin/qwen-code-android.git
 cd qwen-code-android
-
-# Instalar dependencias
 npm install
-
-# Compilar la web app
-npx vite build
-
-# Sincronizar con Capacitor
+npm run build
 npx cap sync android
-
-# Compilar APK
-cd android
-./gradlew assembleDebug
+cd android && ./gradlew assembleDebug
+# APK at android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 🔑 Configuración de API Keys
+Tagging `v*` triggers a GitHub Release automatically with the APK attached.
 
-1. Abre la app y ve a **Configuración** (⚙️)
-2. Selecciona el proveedor que deseas usar
-3. Ingresa tu API key
-4. Presiona **Test** para verificar la conexión
+---
 
-### Proveedores Soportados
-
-| Proveedor | Sitio Web | Modelos |
-|-----------|-----------|---------|
-| OpenRouter | openrouter.ai | 350+ modelos (incluyendo gratuitos) |
-| NVIDIA NIM | build.nvidia.com | Llama, Qwen, DeepSeek, Mistral |
-| Mistral | mistral.ai | Mistral Large, Codestral |
-| Grok (xAI) | x.ai | Grok 3, Grok 2 |
-
-## 🇨🇺 Proxy para Cuba
-
-El proxy iql está habilitado por defecto para permitir acceso desde Cuba a todas las APIs. Si necesitas desactivarlo o cambiar la URL:
-
-1. Ve a **Configuración** → **Proxy**
-2. Activa/desactiva el proxy
-3. Modifica la URL del proxy si es necesario
-
-## 🛠️ Herramientas Disponibles
-
-El agente de IA tiene acceso a las siguientes herramientas:
-
-- **shell** - Ejecutar comandos en el terminal del dispositivo
-- **file_read** - Leer contenido de archivos
-- **file_write** - Crear o sobreescribir archivos
-- **file_edit** - Editar archivos (buscar y reemplazar)
-- **web_fetch** - Obtener contenido de URLs
-- **glob** - Buscar archivos por patrón
-- **grep** - Buscar contenido en archivos
-
-## 🏗️ Arquitectura
+## 🏗️ Architecture
 
 ```
-qwen-code-android/
-├── src/                    # React web app (UI + AI logic)
-│   ├── components/         # UI components (Chat, Terminal, Files, Settings)
-│   ├── services/           # API service, Native bridge
-│   ├── types/              # TypeScript types
-│   ├── utils/              # Config, constants
-│   └── styles/             # Global CSS (Fluent Design)
-├── android/                # Capacitor Android project
-│   └── app/src/main/java/  # Native Java bridge for shell/files
-├── .github/workflows/      # GitHub Actions CI/CD
-└── capacitor.config.ts     # Capacitor configuration
+src/
+  App.tsx                Main app
+  components/
+    ChatView.tsx         AI chat UI
+    MessageBubble.tsx    Markdown + tool-call rendering
+    TerminalView.tsx     Built-in terminal w/ opencode CLI
+    FileExplorer.tsx     Browse / edit files
+    SettingsView.tsx     Configure providers, theme, tools
+    AboutView.tsx        Device info, todos, memory
+  services/
+    api.ts               OpenAI-compatible + Anthropic streaming client
+    agent.ts             Agent loop (think → tool → act)
+    bridge.ts            Capacitor native bridge (shell, files, http, clipboard)
+    opencode-cli.ts      In-app opencode CLI
+  utils/config.ts        Providers, models, tool defs, system prompt
+  types/index.ts         Type definitions
+  styles/global.css      Aurora design system (4 themes)
+android/
+  app/src/main/java/com/opencode/android/
+    MainActivity.java
+    OpenCodeBridgePlugin.java   Native bridge (Java)
+.github/workflows/build.yml      CI: builds debug + release APK
 ```
 
-## 📄 Licencia
+---
 
-MIT License
+## 📜 License
+
+MIT

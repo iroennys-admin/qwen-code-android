@@ -1,98 +1,349 @@
 // ==========================================
-// OpenCode Android - Configuration
+// OpenCode Android v2 - Configuration
 // ==========================================
 
-import type { AppConfig, Provider, ModelInfo } from '../types';
+import type { AppConfig, Provider } from '../types';
 
-const CUBA_PROXY_BASE = 'https://opencode.aiql.com';
+// Cuba-friendly reverse proxy base. Each provider has its own subdomain.
+// Falls back to direct if proxy is disabled.
+const PROXY_BASE = 'https://opencode.aiql.com';
 
-// ---- OpenCode Zen Free Models ----
-const OPENCODE_FREE_MODELS: ModelInfo[] = [
-  { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free', contextLength: 131072, isFree: true, description: 'Razonamiento + tool calling, gratuito' },
-  { id: 'big-pickle', name: 'Big Pickle', contextLength: 131072, isFree: true, description: 'Modelo personalizado de OpenCode, gratuito' },
-  { id: 'minimax-m2.5-free', name: 'MiniMax M2.5 Free', contextLength: 131072, isFree: true, description: 'Modelo de razonamiento, gratuito' },
-  { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super Free', contextLength: 131072, isFree: true, description: 'NVIDIA razonamiento, gratuito' },
-];
-
-// ---- OpenCode Zen Paid Models ----
-const OPENCODE_PAID_MODELS: ModelInfo[] = [
-  { id: 'gpt-5.5', name: 'GPT 5.5', contextLength: 200000 },
-  { id: 'gpt-5.5-pro', name: 'GPT 5.5 Pro', contextLength: 200000 },
-  { id: 'gpt-5.4', name: 'GPT 5.4', contextLength: 128000 },
-  { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', contextLength: 200000 },
-  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', contextLength: 200000 },
-  { id: 'gemini-3-1-pro', name: 'Gemini 3.1 Pro', contextLength: 2000000 },
-  { id: 'qwen3.6-plus', name: 'Qwen 3.6 Plus', contextLength: 131072 },
-  { id: 'glm-5.1', name: 'GLM 5.1', contextLength: 131072 },
-];
-
-// ---- Default Providers ----
+// ---- Default Providers (all FREE tiers + popular paid options) ----
 export const DEFAULT_PROVIDERS: Provider[] = [
+  // ============ Z.AI (GLM) - China's strongest free coding model ============
   {
-    id: 'opencode',
-    name: 'OpenCode Zen (FREE)',
-    baseUrl: 'https://opencode.ai/zen/v1',
-    proxyBaseUrl: `${CUBA_PROXY_BASE}/v1`,
-    apiKey: 'public',
+    id: 'zai',
+    name: 'Z.AI (GLM)',
+    emoji: '🇨🇳',
+    baseUrl: 'https://api.z.ai/api/paas/v4',
+    proxyBaseUrl: `${PROXY_BASE}/zai/v4`,
+    apiKey: '',
     enabled: true,
     isFree: true,
-    models: [...OPENCODE_FREE_MODELS, ...OPENCODE_PAID_MODELS],
+    signupUrl: 'https://z.ai/manage-apikey/apikey-list',
+    notes: 'Modelos GLM gratis (flash) y de pago. OpenAI-compatible. Excelente para código.',
+    models: [
+      { id: 'glm-4.6', name: 'GLM-4.6', contextLength: 200000, description: 'Modelo flagship Z.AI, excelente para código', supportsTools: true, supportsThinking: true },
+      { id: 'glm-4.5', name: 'GLM-4.5', contextLength: 128000, supportsTools: true, supportsThinking: true },
+      { id: 'glm-4.5-air', name: 'GLM-4.5 Air', contextLength: 128000, supportsTools: true, description: 'Más rápido y barato' },
+      { id: 'glm-4.5-flash', name: 'GLM-4.5 Flash ⚡', contextLength: 128000, isFree: true, description: 'GRATIS - Rápido', supportsTools: true },
+      { id: 'glm-4-flash', name: 'GLM-4 Flash ⚡', contextLength: 128000, isFree: true, description: 'GRATIS', supportsTools: true },
+      { id: 'glm-4v-flash', name: 'GLM-4V Flash 👁️', contextLength: 128000, isFree: true, description: 'GRATIS con visión', supportsVision: true },
+    ],
   },
+
+  // ============ Groq - Fastest inference, large free tier ============
+  {
+    id: 'groq',
+    name: 'Groq',
+    emoji: '⚡',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    proxyBaseUrl: `${PROXY_BASE}/groq/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://console.groq.com/keys',
+    notes: 'Inferencia ultra rápida (LPU). Generoso tier gratis sin tarjeta.',
+    models: [
+      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B ⚡', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'qwen/qwen3-32b', name: 'Qwen 3 32B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'moonshotai/kimi-k2-instruct', name: 'Kimi K2', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill 70B', contextLength: 131072, isFree: true, supportsTools: true, supportsThinking: true },
+    ],
+  },
+
+  // ============ Cerebras - Fastest reasoning ============
+  {
+    id: 'cerebras',
+    name: 'Cerebras',
+    emoji: '🧠',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    proxyBaseUrl: `${PROXY_BASE}/cerebras/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://cloud.cerebras.ai/platform/',
+    notes: 'Wafer-scale chips, +2000 tok/s. Free tier 1M tokens/día.',
+    models: [
+      { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 8192, isFree: true, supportsTools: true },
+      { id: 'llama3.1-8b', name: 'Llama 3.1 8B', contextLength: 8192, isFree: true, supportsTools: true },
+      { id: 'qwen-3-32b', name: 'Qwen 3 32B', contextLength: 16384, isFree: true, supportsTools: true },
+      { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', contextLength: 8192, isFree: true, supportsTools: true },
+    ],
+  },
+
+  // ============ Google AI Studio (Gemini) ============
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    emoji: '✨',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    proxyBaseUrl: `${PROXY_BASE}/gemini/v1beta/openai`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://aistudio.google.com/apikey',
+    notes: 'OpenAI-compatible. Gemini Flash gratis con visión y 1M de contexto.',
+    models: [
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextLength: 1048576, isFree: true, supportsVision: true, supportsTools: true },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextLength: 1048576, isFree: true, supportsVision: true, supportsTools: true, supportsThinking: true },
+      { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', contextLength: 1048576, isFree: true, supportsVision: true, supportsTools: true },
+      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', contextLength: 1048576, isFree: true, supportsVision: true, supportsTools: true },
+    ],
+  },
+
+  // ============ OpenRouter - Hub multimodelo ============
   {
     id: 'openrouter',
     name: 'OpenRouter',
+    emoji: '🔀',
     baseUrl: 'https://openrouter.ai/api/v1',
-    proxyBaseUrl: `https://openrouter.aiql.com/v1`,
+    proxyBaseUrl: `${PROXY_BASE}/openrouter/v1`,
     apiKey: '',
     enabled: true,
+    isFree: true,
+    signupUrl: 'https://openrouter.ai/keys',
+    notes: '+300 modelos vía un solo API key. Incluye decenas de modelos gratis.',
+    extraHeaders: {
+      'HTTP-Referer': 'https://github.com/iroennys-admin/qwen-code-android',
+      'X-Title': 'OpenCode Android',
+    },
     models: [
-      { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B (Free)', isFree: true },
-      { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1 (Free)', isFree: true },
-      { id: 'google/gemini-2.5-flash-preview:free', name: 'Gemini 2.5 Flash (Free)', isFree: true },
+      { id: 'z-ai/glm-4.6', name: 'GLM-4.6 (via OR)', contextLength: 200000, supportsTools: true },
+      { id: 'deepseek/deepseek-chat-v3.1:free', name: 'DeepSeek V3.1 (Free)', contextLength: 163840, isFree: true, supportsTools: true },
+      { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1 (Free)', contextLength: 163840, isFree: true, supportsThinking: true },
+      { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder (Free)', contextLength: 262144, isFree: true, supportsTools: true },
+      { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B (Free)', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Free)', contextLength: 1048576, isFree: true, supportsVision: true, supportsTools: true },
+      { id: 'moonshotai/kimi-k2:free', name: 'Kimi K2 (Free)', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'mistralai/mistral-small-3.2-24b-instruct:free', name: 'Mistral Small 3.2 (Free)', contextLength: 96000, isFree: true, supportsTools: true },
+      { id: 'nvidia/llama-3.1-nemotron-70b-instruct:free', name: 'Nemotron 70B (Free)', contextLength: 131072, isFree: true },
     ],
   },
+
+  // ============ NVIDIA NIM ============
+  {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    emoji: '💚',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    proxyBaseUrl: `${PROXY_BASE}/nvidia/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://build.nvidia.com/',
+    notes: '100+ modelos open-source gratis con créditos generosos.',
+    models: [
+      { id: 'deepseek-ai/deepseek-r1', name: 'DeepSeek R1', contextLength: 128000, isFree: true, supportsThinking: true },
+      { id: 'deepseek-ai/deepseek-v3.1', name: 'DeepSeek V3.1', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'qwen/qwen3-coder-480b-a35b-instruct', name: 'Qwen3 Coder 480B', contextLength: 262144, isFree: true, supportsTools: true },
+      { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', name: 'Nemotron Super 49B', contextLength: 128000, isFree: true },
+      { id: 'mistralai/mistral-large-2-instruct', name: 'Mistral Large 2', contextLength: 128000, isFree: true, supportsTools: true },
+    ],
+  },
+
+  // ============ Mistral AI ============
+  {
+    id: 'mistral',
+    name: 'Mistral AI',
+    emoji: '🌪️',
+    baseUrl: 'https://api.mistral.ai/v1',
+    proxyBaseUrl: `${PROXY_BASE}/mistral/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://console.mistral.ai/api-keys',
+    notes: 'Tier gratis "La Plateforme" con 1B tokens/mes.',
+    models: [
+      { id: 'mistral-large-latest', name: 'Mistral Large', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'mistral-small-latest', name: 'Mistral Small', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'codestral-latest', name: 'Codestral', contextLength: 256000, isFree: true, supportsTools: true, description: 'Especialista en código' },
+      { id: 'open-mistral-nemo', name: 'Mistral Nemo', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'pixtral-large-latest', name: 'Pixtral Large 👁️', contextLength: 128000, isFree: true, supportsVision: true },
+    ],
+  },
+
+  // ============ DeepSeek (cheap, almost free) ============
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    emoji: '🐳',
+    baseUrl: 'https://api.deepseek.com/v1',
+    proxyBaseUrl: `${PROXY_BASE}/deepseek/v1`,
+    apiKey: '',
+    enabled: true,
+    signupUrl: 'https://platform.deepseek.com/api_keys',
+    notes: 'Súper barato. Modelos R1 (razonamiento) y V3 (chat/código).',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek V3', contextLength: 64000, supportsTools: true },
+      { id: 'deepseek-reasoner', name: 'DeepSeek R1', contextLength: 64000, supportsThinking: true },
+    ],
+  },
+
+  // ============ GitHub Models ============
+  {
+    id: 'github',
+    name: 'GitHub Models',
+    emoji: '🐙',
+    baseUrl: 'https://models.inference.ai.azure.com',
+    proxyBaseUrl: `${PROXY_BASE}/github/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://github.com/settings/personal-access-tokens/new',
+    notes: 'Free con PAT de GitHub. GPT-4o, o4-mini, Llama, Phi-4, etc.',
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o', contextLength: 128000, isFree: true, supportsTools: true, supportsVision: true },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'o4-mini', name: 'o4 Mini', contextLength: 200000, isFree: true, supportsThinking: true },
+      { id: 'Phi-4', name: 'Phi-4', contextLength: 16384, isFree: true },
+      { id: 'Meta-Llama-3.1-405B-Instruct', name: 'Llama 3.1 405B', contextLength: 128000, isFree: true, supportsTools: true },
+    ],
+  },
+
+  // ============ Cohere ============
+  {
+    id: 'cohere',
+    name: 'Cohere',
+    emoji: '🟣',
+    baseUrl: 'https://api.cohere.ai/compatibility/v1',
+    proxyBaseUrl: `${PROXY_BASE}/cohere/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://dashboard.cohere.com/api-keys',
+    notes: 'Command R/R+ con tier de prueba gratuito.',
+    models: [
+      { id: 'command-r-plus', name: 'Command R+', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'command-r', name: 'Command R', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'command-r7b', name: 'Command R7B', contextLength: 128000, isFree: true, supportsTools: true },
+    ],
+  },
+
+  // ============ SambaNova ============
+  {
+    id: 'sambanova',
+    name: 'SambaNova',
+    emoji: '🦛',
+    baseUrl: 'https://api.sambanova.ai/v1',
+    proxyBaseUrl: `${PROXY_BASE}/sambanova/v1`,
+    apiKey: '',
+    enabled: true,
+    isFree: true,
+    signupUrl: 'https://cloud.sambanova.ai/apis',
+    notes: 'Inferencia rápida. Free con DeepSeek V3.1, Llama 4.',
+    models: [
+      { id: 'DeepSeek-V3.1', name: 'DeepSeek V3.1', contextLength: 128000, isFree: true, supportsTools: true },
+      { id: 'Meta-Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B', contextLength: 131072, isFree: true, supportsTools: true },
+      { id: 'Llama-4-Maverick-17B-128E-Instruct', name: 'Llama 4 Maverick', contextLength: 131072, isFree: true, supportsTools: true },
+    ],
+  },
+
+  // ============ xAI Grok ============
+  {
+    id: 'xai',
+    name: 'xAI Grok',
+    emoji: '🤖',
+    baseUrl: 'https://api.x.ai/v1',
+    proxyBaseUrl: `${PROXY_BASE}/xai/v1`,
+    apiKey: '',
+    enabled: true,
+    signupUrl: 'https://console.x.ai/',
+    notes: '$25 USD de créditos gratis al registrarse.',
+    models: [
+      { id: 'grok-4', name: 'Grok 4', contextLength: 256000, supportsTools: true, supportsVision: true },
+      { id: 'grok-3', name: 'Grok 3', contextLength: 131072, supportsTools: true },
+      { id: 'grok-3-mini', name: 'Grok 3 Mini', contextLength: 131072, supportsTools: true },
+      { id: 'grok-code-fast-1', name: 'Grok Code Fast', contextLength: 131072, supportsTools: true },
+    ],
+  },
+
+  // ============ OpenAI ============
   {
     id: 'openai',
     name: 'OpenAI',
+    emoji: '🟢',
     baseUrl: 'https://api.openai.com/v1',
-    proxyBaseUrl: `https://openai.aiql.com/v1`,
+    proxyBaseUrl: `${PROXY_BASE}/openai/v1`,
     apiKey: '',
     enabled: true,
+    signupUrl: 'https://platform.openai.com/api-keys',
+    notes: 'API oficial OpenAI (pago).',
     models: [
-      { id: 'gpt-4o', name: 'GPT-4o' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+      { id: 'gpt-4o', name: 'GPT-4o', contextLength: 128000, supportsTools: true, supportsVision: true },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextLength: 128000, supportsTools: true },
+      { id: 'o3-mini', name: 'o3 Mini', contextLength: 200000, supportsThinking: true },
     ],
   },
+
+  // ============ Anthropic ============
   {
     id: 'anthropic',
     name: 'Anthropic',
+    emoji: '🅰️',
     baseUrl: 'https://api.anthropic.com/v1',
-    proxyBaseUrl: `https://anthropic.aiql.com/v1`,
+    proxyBaseUrl: `${PROXY_BASE}/anthropic/v1`,
     apiKey: '',
     enabled: true,
+    style: 'anthropic',
+    signupUrl: 'https://console.anthropic.com/settings/keys',
+    notes: 'Claude (pago). Usa API Messages.',
     models: [
-      { id: 'claude-sonnet-4-5-20250514', name: 'Claude Sonnet 4.5' },
-      { id: 'claude-haiku-4-5-20250514', name: 'Claude Haiku 4.5' },
+      { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextLength: 200000, supportsTools: true, supportsVision: true, supportsThinking: true },
+      { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', contextLength: 200000, supportsTools: true, supportsVision: true },
+      { id: 'claude-haiku-4-5-20250514', name: 'Claude Haiku 4.5', contextLength: 200000, supportsTools: true },
+    ],
+  },
+
+  // ============ Custom (user-defined) ============
+  {
+    id: 'custom',
+    name: 'Custom (OpenAI-compatible)',
+    emoji: '⚙️',
+    baseUrl: 'https://api.example.com/v1',
+    proxyBaseUrl: '',
+    apiKey: '',
+    enabled: true,
+    notes: 'Endpoint personalizado OpenAI-compatible (Ollama, LocalAI, LMStudio).',
+    models: [
+      { id: 'custom-model', name: 'Custom Model' },
     ],
   },
 ];
 
-// ---- System Prompt (OpenCode-style) ----
-export const SYSTEM_PROMPT = `You are OpenCode, an expert AI coding assistant running on Android. You help users write, debug, refactor, and understand code.
+// ---- System Prompt ----
+export const SYSTEM_PROMPT = `You are OpenCode, an expert AI coding agent running on Android. You help users write, debug, refactor, search, and understand code directly on their phone.
 
-You have access to tools that let you execute shell commands, read and write files, search code, and fetch web content. Use these tools proactively to help the user.
+You have access to powerful tools: execute shell commands, read/write/edit files, search code, fetch web pages, perform web searches, manage TODOs, and remember things across sessions. Use these tools proactively.
 
-Guidelines:
-- Execute shell commands when asked to run, test, or debug code
-- Read files before editing them to understand context
-- Use glob/grep to search for files and patterns
-- Write complete, working code — no placeholders or TODOs
-- Explain what you're doing and why
-- For multi-step tasks, break them down and execute step by step
-- When editing files, use file_edit for precise changes and file_write for new files
+GUIDELINES:
+- Think step by step. For non-trivial tasks, break them down.
+- Read files BEFORE editing them to understand context.
+- Use glob/grep to discover files and patterns.
+- Use file_edit for precise changes, file_write for new files.
+- Execute shell commands when you need to run, test, or inspect things.
+- When asked a factual question that depends on current info, use web_search.
+- When the user wants to track tasks, use todo_add / todo_update.
+- Use memory_save for information the user wants you to remember long term.
+- Write complete, working code — no placeholders or "TODO" comments unless explicitly asked.
+- Be concise in chat; verbose in code.
+- Format code with proper markdown fences (\`\`\`lang ... \`\`\`).
+- If you need to install something, suggest packages available via pkg/apt/pip.
 
-Current directory: /sdcard
-Device: Android (ARM)`;
+ENVIRONMENT:
+- Platform: Android (ARM64/ARMv7)
+- Working directory: /sdcard (user's storage)
+- Shell: sh (BusyBox/Toybox). Use POSIX-compatible commands.
+- You can install packages if Termux/proot is available.
+
+Be helpful, accurate, and proactive.`;
 
 // ---- Tool Definitions (OpenAI function calling format) ----
 export const TOOL_DEFINITIONS = [
@@ -100,12 +351,13 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'shell',
-      description: 'Execute a shell command on the device. Returns stdout, stderr, and exit code.',
+      description: 'Execute a shell command on the Android device. Returns stdout, stderr and exit code. Use for running scripts, inspecting the system, installing packages, running tests, git operations, etc.',
       parameters: {
         type: 'object',
         properties: {
           command: { type: 'string', description: 'The shell command to execute' },
-          timeout: { type: 'number', description: 'Timeout in seconds (default 30)' },
+          timeout: { type: 'number', description: 'Timeout in seconds (default 60)' },
+          cwd: { type: 'string', description: 'Working directory (optional)' },
         },
         required: ['command'],
       },
@@ -115,11 +367,13 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'file_read',
-      description: 'Read the contents of a file. Returns the file content as text.',
+      description: 'Read a file. Returns its full text content. Supports an optional line range.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute path to the file' },
+          path: { type: 'string', description: 'Absolute or relative path' },
+          start_line: { type: 'number', description: 'Optional 1-based start line' },
+          end_line: { type: 'number', description: 'Optional 1-based end line' },
         },
         required: ['path'],
       },
@@ -129,12 +383,12 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'file_write',
-      description: 'Write content to a file. Creates the file and parent directories if they do not exist.',
+      description: 'Write content to a file (creates or overwrites). Creates parent directories as needed.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute path to the file' },
-          content: { type: 'string', description: 'Content to write' },
+          path: { type: 'string' },
+          content: { type: 'string' },
         },
         required: ['path', 'content'],
       },
@@ -144,12 +398,12 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'file_edit',
-      description: 'Edit a file by replacing old text with new text. Use for precise edits.',
+      description: 'Find-and-replace exact text in a file. The old_text must appear exactly once.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute path to the file' },
-          old_text: { type: 'string', description: 'Text to find and replace' },
+          path: { type: 'string' },
+          old_text: { type: 'string', description: 'Exact substring to replace' },
           new_text: { type: 'string', description: 'Replacement text' },
         },
         required: ['path', 'old_text', 'new_text'],
@@ -159,13 +413,28 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function' as const,
     function: {
-      name: 'list_dir',
-      description: 'List contents of a directory. Returns names, types, and sizes.',
+      name: 'file_append',
+      description: 'Append content to the end of a file (creating it if needed).',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute path to directory' },
-          show_hidden: { type: 'boolean', description: 'Show hidden files (default false)' },
+          path: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['path', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'list_dir',
+      description: 'List the contents of a directory. Returns names, types and sizes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          show_hidden: { type: 'boolean' },
         },
         required: ['path'],
       },
@@ -175,12 +444,12 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'glob',
-      description: 'Find files matching a glob pattern in a directory.',
+      description: 'Find files matching a shell glob pattern (e.g. **/*.py).',
       parameters: {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'Glob pattern (e.g. **/*.py)' },
-          path: { type: 'string', description: 'Directory to search in (default /sdcard)' },
+          pattern: { type: 'string' },
+          path: { type: 'string' },
         },
         required: ['pattern'],
       },
@@ -190,13 +459,13 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'grep',
-      description: 'Search for a regex pattern in files within a directory.',
+      description: 'Search a regex pattern recursively in files. Returns filename:line:match lines.',
       parameters: {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'Regex pattern to search for' },
-          path: { type: 'string', description: 'Directory to search in' },
-          file_pattern: { type: 'string', description: 'File glob pattern (e.g. *.py)' },
+          pattern: { type: 'string' },
+          path: { type: 'string' },
+          file_pattern: { type: 'string', description: 'File glob e.g. *.py' },
         },
         required: ['pattern'],
       },
@@ -206,11 +475,12 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'web_fetch',
-      description: 'Fetch the content of a URL. Returns the page text.',
+      description: 'Fetch a URL and return its text content (HTML is converted to readable text).',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'URL to fetch' },
+          url: { type: 'string' },
+          max_chars: { type: 'number', description: 'Truncate output (default 20000)' },
         },
         required: ['url'],
       },
@@ -219,13 +489,26 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function' as const,
     function: {
-      name: 'mkdir',
-      description: 'Create a directory and all parent directories.',
+      name: 'web_search',
+      description: 'Search the web. Returns top results with title, URL and snippet.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute path to create' },
+          query: { type: 'string' },
+          num_results: { type: 'number', description: 'Max results (default 5)' },
         },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'mkdir',
+      description: 'Create a directory (and parents).',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
         required: ['path'],
       },
     },
@@ -238,8 +521,8 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute path to delete' },
-          recursive: { type: 'boolean', description: 'Delete directory recursively (default false)' },
+          path: { type: 'string' },
+          recursive: { type: 'boolean' },
         },
         required: ['path'],
       },
@@ -253,8 +536,8 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: 'object',
         properties: {
-          source: { type: 'string', description: 'Source path' },
-          destination: { type: 'string', description: 'Destination path' },
+          source: { type: 'string' },
+          destination: { type: 'string' },
         },
         required: ['source', 'destination'],
       },
@@ -268,28 +551,139 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: 'object',
         properties: {
-          source: { type: 'string', description: 'Source path' },
-          destination: { type: 'string', description: 'Destination path' },
+          source: { type: 'string' },
+          destination: { type: 'string' },
         },
         required: ['source', 'destination'],
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'todo_add',
+      description: 'Add a TODO item to the user task list.',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'todo_list',
+      description: 'List current TODO items.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'todo_complete',
+      description: 'Mark a TODO as done by its id.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'memory_save',
+      description: 'Persist a key/value fact that the agent should remember in future conversations.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          value: { type: 'string' },
+        },
+        required: ['key', 'value'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'memory_get',
+      description: 'Retrieve all remembered facts.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'clipboard_copy',
+      description: 'Copy text to the device clipboard.',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'clipboard_read',
+      description: 'Read text from the device clipboard.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'notify',
+      description: 'Show a toast/notification on the device.',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: { type: 'string' },
+        },
+        required: ['message'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'device_info',
+      description: 'Get information about the Android device (model, OS, storage, etc.).',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
 ];
+
+// Tools that should always require user approval before execution.
+export const APPROVAL_REQUIRED_TOOLS = new Set([
+  'shell', 'rm', 'file_write', 'file_edit', 'file_append', 'mv',
+]);
 
 // ---- Default Config ----
 export const DEFAULT_CONFIG: AppConfig = {
   providers: DEFAULT_PROVIDERS,
-  activeProvider: 'opencode',
-  activeModel: 'deepseek-v4-flash-free',
+  activeProvider: 'zai',
+  activeModel: 'glm-4.5-flash',
   proxyEnabled: false,
-  proxyBaseUrl: CUBA_PROXY_BASE,
+  proxyBaseUrl: PROXY_BASE,
   streaming: true,
   temperature: 0.7,
-  maxTokens: 16384,
+  maxTokens: 8192,
   systemPrompt: SYSTEM_PROMPT,
   approvalMode: 'auto_edit',
   fontSize: 14,
-  maxAgentSteps: 30,
+  maxAgentSteps: 25,
   workingDir: '/sdcard',
+  theme: 'aurora',
+  showThinking: true,
+  enableThinkingMode: false,
+  enableMemory: true,
+  enableTodos: true,
+  hapticFeedback: true,
+  webSearchProvider: 'duckduckgo',
 };
+
+export const CONFIG_VERSION = 10;

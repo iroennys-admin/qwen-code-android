@@ -8,12 +8,8 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
-    minify: false,
-    rollupOptions: {
-      output: {
-        manualChunks: undefined,
-      },
-    },
+    minify: 'esbuild',
+    target: 'es2020',
   },
   server: {
     port: 5173,

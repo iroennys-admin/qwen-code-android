@@ -1,16 +1,25 @@
 // ==========================================
-// OpenCode Android - Type Definitions
+// OpenCode Android v2 - Type Definitions
 // ==========================================
 
 export interface Provider {
   id: string;
   name: string;
+  emoji?: string;
   baseUrl: string;
   proxyBaseUrl: string;
   apiKey: string;
   models: ModelInfo[];
   enabled: boolean;
   isFree?: boolean;
+  signupUrl?: string;
+  notes?: string;
+  /** Extra body fields to include on every request (e.g. {thinking:{type:'enabled'}}) */
+  extraBody?: Record<string, unknown>;
+  /** Extra HTTP headers (e.g. for OpenRouter ranking) */
+  extraHeaders?: Record<string, string>;
+  /** API style: 'openai' (default) | 'anthropic' (messages API) */
+  style?: 'openai' | 'anthropic';
 }
 
 export interface ModelInfo {
@@ -19,6 +28,9 @@ export interface ModelInfo {
   contextLength?: number;
   description?: string;
   isFree?: boolean;
+  supportsVision?: boolean;
+  supportsTools?: boolean;
+  supportsThinking?: boolean;
 }
 
 export interface OpenCodeMessage {
@@ -33,6 +45,22 @@ export interface OpenCodeMessage {
   model?: string;
   provider?: string;
   step?: number;
+  attachments?: Attachment[];
+  usage?: TokenUsage;
+  error?: string;
+}
+
+export interface Attachment {
+  type: 'image' | 'file';
+  name: string;
+  dataUrl?: string;
+  path?: string;
+}
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 }
 
 export interface OpenCodeToolCall {
@@ -40,17 +68,14 @@ export interface OpenCodeToolCall {
   type: ToolType;
   name: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting_approval';
+  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting_approval' | 'denied';
   output?: string;
   requiresApproval: boolean;
   duration?: number;
+  startedAt?: number;
 }
 
-export type ToolType =
-  | 'shell' | 'file_read' | 'file_write' | 'file_edit'
-  | 'web_fetch' | 'web_search'
-  | 'glob' | 'grep' | 'code_execute'
-  | 'mkdir' | 'rm' | 'mv' | 'cp' | 'list_dir';
+export type ToolType = string;
 
 export interface ToolResult {
   toolCallId: string;
@@ -72,21 +97,25 @@ export interface AppConfig {
   fontSize: number;
   maxAgentSteps: number;
   workingDir: string;
+  theme: 'dark' | 'midnight' | 'aurora' | 'cyber';
+  showThinking: boolean;
+  enableThinkingMode: boolean;
+  enableMemory: boolean;
+  enableTodos: boolean;
+  hapticFeedback: boolean;
+  webSearchProvider: 'duckduckgo' | 'searxng' | 'tavily';
+  searxngUrl?: string;
 }
 
 export interface StreamChunk {
-  type: 'content' | 'tool_call' | 'tool_result' | 'thinking' | 'error' | 'done' | 'agent_step';
+  type: 'content' | 'tool_call' | 'tool_result' | 'thinking' | 'error' | 'done' | 'agent_step' | 'usage';
   content?: string;
   toolCall?: OpenCodeToolCall;
   toolResult?: ToolResult;
   thinking?: string;
   error?: string;
   step?: number;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage?: TokenUsage;
 }
 
 export interface ShellResult {
@@ -97,9 +126,10 @@ export interface ShellResult {
 
 export interface ApiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
+  content?: string | null | Array<{ type: string; text?: string; image_url?: { url: string } }>;
   tool_calls?: ApiToolCall[];
   tool_call_id?: string;
+  name?: string;
 }
 
 export interface ApiToolCall {
@@ -111,7 +141,7 @@ export interface ApiToolCall {
   };
 }
 
-export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings' | 'opencode-setup';
+export type ViewMode = 'chat' | 'terminal' | 'files' | 'settings' | 'about';
 
 export interface AgentState {
   status: 'idle' | 'thinking' | 'calling_tool' | 'executing' | 'waiting_approval' | 'done' | 'error';
@@ -119,4 +149,27 @@ export interface AgentState {
   totalSteps: number;
   thinkingText?: string;
   currentTool?: string;
+}
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+}
+
+export interface MemoryEntry {
+  key: string;
+  value: string;
+  updatedAt: number;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: OpenCodeMessage[];
+  createdAt: number;
+  updatedAt: number;
+  provider: string;
+  model: string;
 }

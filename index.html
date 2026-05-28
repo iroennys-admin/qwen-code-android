@@ -3,14 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#0d1117" />
+    <meta name="theme-color" content="#06070d" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>OpenCode</title>
+    <title>OpenCode AI</title>
     <style>
-      body { margin: 0; background: #0d1117; }
+      html, body { margin: 0; background: #06070d; color: #e8eaff; overscroll-behavior: none; }
+      #splash {
+        position: fixed; inset: 0; z-index: 9999;
+        display: grid; place-items: center;
+        background: radial-gradient(circle at 50% 50%, #1a1730, #06070d);
+        transition: opacity 0.4s ease;
+      }
+      #splash.hide { opacity: 0; pointer-events: none; }
+      .sp-logo {
+        width: 110px; height: 110px;
+        border-radius: 28px;
+        background: linear-gradient(135deg, #7c8cff, #b384ff 50%, #5ee5d3);
+        display: grid; place-items: center;
+        color: #fff; font-weight: 800; font-size: 50px;
+        font-family: -apple-system, system-ui, sans-serif;
+        box-shadow: 0 0 60px rgba(124, 140, 255, 0.5);
+        animation: sp 1.6s ease-in-out infinite;
+      }
+      @keyframes sp { 50% { transform: scale(1.04); } }
     </style>
   </head>
   <body>
+    <div id="splash"><div class="sp-logo">◆</div></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

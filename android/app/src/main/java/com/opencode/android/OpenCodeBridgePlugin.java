@@ -1,13 +1,17 @@
 package com.opencode.android;
 
 import android.Manifest;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
@@ -19,34 +23,32 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
-import com.getcapacitor.annotation.PermissionCallback;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 
 /**
- * OpenCodeBridgePlugin - Capacitor plugin for OpenCode Android.
- * 
+ * OpenCodeBridgePlugin - Capacitor plugin for OpenCode Android v2.
+ *
  * Provides native bridge functionality:
- * - Shell command execution
- * - File operations (read, write, list, delete, move, copy, mkdir)
- * - HTTP requests (bypasses CORS)
- * - Device info
- * - Toast messages
- * 
- * Simplified from the original Qwen Code bridge to focus on OpenCode's tools only.
+ *  - Shell command execution (sh -c)
+ *  - File ops (read, write, append, edit, list, delete, move, copy, mkdir, exists)
+ *  - HTTP requests (bypasses CORS, with retries)
+ *  - Clipboard read/write
+ *  - Vibrate, toast
+ *  - Device info
  */
 @CapacitorPlugin(
     name = "OpenCodeBridge",
@@ -54,8 +56,8 @@ import java.util.Iterator;
         @Permission(
             alias = "storage",
             strings = {
-                "android.permission.READ_EXTERNAL_STORAGE",
-                "android.permission.WRITE_EXTERNAL_STORAGE"
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
             }
         ),
         @Permission(
@@ -69,623 +71,500 @@ import java.util.Iterator;
     }
 )
 public class OpenCodeBridgePlugin extends Plugin {
-    
+
     private static final String TAG = "OpenCodeBridge";
     private String workingDir;
-    
+
     @Override
     public void load() {
         workingDir = Environment.getExternalStorageDirectory().getAbsolutePath();
         requestAllPermissions();
     }
-    
+
     private void requestAllPermissions() {
         try {
+            ArrayList<String> perms = new ArrayList<>();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                requestPermissionForAliases(new String[]{"media"});
+                perms.add("android.permission.READ_MEDIA_IMAGES");
+                perms.add("android.permission.READ_MEDIA_VIDEO");
+                perms.add("android.permission.READ_MEDIA_AUDIO");
             } else {
-                requestPermissionForAliases(new String[]{"storage"});
+                perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+                perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
             }
-            
-            // Request MANAGE_EXTERNAL_STORAGE for Android 11+
+            getActivity().requestPermissions(perms.toArray(new String[0]), 200);
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 if (!Environment.isExternalStorageManager()) {
                     try {
                         Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                        intent.setData(android.net.Uri.parse("package:" + getActivity().getPackageName()));
+                        intent.setData(Uri.parse("package:" + getActivity().getPackageName()));
                         getActivity().startActivity(intent);
                     } catch (Exception e) {
-                        Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-                        getActivity().startActivity(intent);
+                        try {
+                            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                            getActivity().startActivity(intent);
+                        } catch (Exception ignored) {}
                     }
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error requesting permissions: " + e.getMessage());
+            Log.e(TAG, "Permissions error: " + e.getMessage());
         }
-    }
-    
-    private void requestPermissionForAliases(String[] aliases) {
-        try {
-            ArrayList<String> perms = new ArrayList<>();
-            for (String alias : aliases) {
-                if (alias.equals("storage")) {
-                    perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
-                    perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-                }
-                if (alias.equals("media")) {
-                    perms.add(Manifest.permission.READ_MEDIA_IMAGES);
-                    perms.add(Manifest.permission.READ_MEDIA_VIDEO);
-                    perms.add(Manifest.permission.READ_MEDIA_AUDIO);
-                }
-            }
-            if (!perms.isEmpty()) {
-                getActivity().requestPermissions(perms.toArray(new String[0]), 200);
-            }
-        } catch (Exception ex) {
-            Log.e(TAG, "Permission request failed: " + ex.getMessage());
-        }
-    }
-    
-    @PermissionCallback
-    private void storageCallback(PluginCall call) {}
-    
-    // ==========================================
-    // Basic Plugin Methods
-    // ==========================================
-    
-    @PluginMethod
-    public void isCapacitor(PluginCall call) {
-        JSObject ret = new JSObject();
-        ret.put("value", true);
-        call.resolve(ret);
-    }
-    
-    @PluginMethod
-    public void checkPermissions(PluginCall call) {
-        JSObject ret = new JSObject();
-        boolean canRead = true;
-        boolean canWrite = true;
-        
-        try {
-            File testFile = new File(Environment.getExternalStorageDirectory(), ".opencode_test");
-            canWrite = testFile.createNewFile();
-            if (canWrite) {
-                canRead = testFile.exists();
-                testFile.delete();
-            }
-        } catch (Exception e) {
-            canRead = false;
-            canWrite = false;
-        }
-        
-        ret.put("canReadStorage", canRead);
-        ret.put("canWriteStorage", canWrite);
-        ret.put("hasAllFilesAccess", Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ? Environment.isExternalStorageManager() : true);
-        call.resolve(ret);
-    }
-    
-    @PluginMethod
-    public void requestStoragePermission(PluginCall call) {
-        requestAllPermissions();
-        JSObject ret = new JSObject();
-        ret.put("value", true);
-        call.resolve(ret);
     }
 
     // ==========================================
-    // Shell Execution
+    // Basic
+    // ==========================================
+
+    @PluginMethod
+    public void isCapacitor(PluginCall call) {
+        JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void checkPermissions(PluginCall call) {
+        JSObject ret = new JSObject();
+        boolean canRead = true, canWrite = true;
+        try {
+            File testFile = new File(Environment.getExternalStorageDirectory(), ".oc_test");
+            canWrite = testFile.createNewFile();
+            if (canWrite) { canRead = testFile.exists(); testFile.delete(); }
+        } catch (Exception e) { canRead = false; canWrite = false; }
+        ret.put("canReadStorage", canRead);
+        ret.put("canWriteStorage", canWrite);
+        ret.put("hasAllFilesAccess", Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+            ? Environment.isExternalStorageManager() : true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestStoragePermission(PluginCall call) {
+        requestAllPermissions();
+        JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+    }
+
+    // ==========================================
+    // Shell
     // ==========================================
 
     @PluginMethod
     public void executeShell(PluginCall call) {
-        String command = call.getString("command", "");
-        int timeout = call.getInt("timeout", 60);
-        
-        if (command.isEmpty()) {
-            call.reject("Command is required");
-            return;
-        }
-        
+        final String command = call.getString("command", "");
+        final int timeout = call.getInt("timeout", 60);
+        final String cwd = call.getString("cwd", "");
+        if (command == null || command.isEmpty()) { call.reject("command required"); return; }
+
         new Thread(() -> {
             try {
                 ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
-                pb.directory(new File(workingDir));
+                File wd = (cwd != null && !cwd.isEmpty()) ? new File(cwd) : new File(workingDir);
+                if (wd.exists() && wd.isDirectory()) pb.directory(wd);
                 pb.redirectErrorStream(false);
-                
+
                 java.util.Map<String, String> env = pb.environment();
                 env.put("TERM", "xterm-256color");
                 env.put("HOME", workingDir);
-                env.put("PATH", System.getenv("PATH") + ":/data/data/com.opencode.android/files/usr/bin");
-                
+                String basePath = System.getenv("PATH");
+                env.put("PATH", (basePath == null ? "/system/bin:/system/xbin" : basePath)
+                    + ":/data/data/com.opencode.android/files/usr/bin");
+
                 Process process = pb.start();
-                
-                StringBuilder stdout = new StringBuilder();
-                StringBuilder stderr = new StringBuilder();
-                
-                Thread stdoutThread = new Thread(() -> {
-                    try {
-                        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            stdout.append(line).append("\n");
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error reading stdout: " + e.getMessage());
-                    }
+                final StringBuilder stdout = new StringBuilder();
+                final StringBuilder stderr = new StringBuilder();
+
+                Thread t1 = new Thread(() -> {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                        String line; while ((line = r.readLine()) != null) stdout.append(line).append('\n');
+                    } catch (Exception ignored) {}
                 });
-                
-                Thread stderrThread = new Thread(() -> {
-                    try {
-                        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            stderr.append(line).append("\n");
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error reading stderr: " + e.getMessage());
-                    }
+                Thread t2 = new Thread(() -> {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                        String line; while ((line = r.readLine()) != null) stderr.append(line).append('\n');
+                    } catch (Exception ignored) {}
                 });
-                
-                stdoutThread.start();
-                stderrThread.start();
-                
-                boolean completed = process.waitFor(timeout, java.util.concurrent.TimeUnit.SECONDS);
-                
-                stdoutThread.join(2000);
-                stderrThread.join(2000);
-                
-                int exitCode;
-                if (!completed) {
-                    process.destroyForcibly();
-                    exitCode = -1;
-                } else {
-                    exitCode = process.exitValue();
-                }
-                
+                t1.start(); t2.start();
+
+                boolean ok = process.waitFor(timeout, TimeUnit.SECONDS);
+                t1.join(2000); t2.join(2000);
+
+                int exit;
+                if (!ok) { process.destroyForcibly(); exit = 124; stderr.append("\n[timeout]\n"); }
+                else exit = process.exitValue();
+
                 JSObject ret = new JSObject();
-                ret.put("stdout", stdout.toString().trim());
-                ret.put("stderr", stderr.toString().trim());
-                ret.put("exitCode", exitCode);
-                
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                
+                ret.put("stdout", stdout.toString());
+                ret.put("stderr", stderr.toString());
+                ret.put("exitCode", exit);
+                resolveOnMain(call, ret);
             } catch (Exception e) {
                 JSObject ret = new JSObject();
                 ret.put("stdout", "");
                 ret.put("stderr", e.getMessage());
-                ret.put("exitCode", -1);
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
+                ret.put("exitCode", 1);
+                resolveOnMain(call, ret);
             }
         }).start();
     }
 
     // ==========================================
-    // File Operations
+    // File ops
     // ==========================================
 
     @PluginMethod
     public void readFile(PluginCall call) {
-        String path = call.getString("path", "");
-        if (path.isEmpty()) {
-            call.reject("Path is required");
-            return;
-        }
-        
+        final String path = call.getString("path", "");
+        if (path == null || path.isEmpty()) { call.reject("path required"); return; }
         new Thread(() -> {
             try {
-                File file = resolvePath(path);
-                if (!file.exists()) {
-                    JSObject ret = new JSObject();
-                    ret.put("value", "");
-                    ret.put("error", "File not found: " + path);
-                    new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                    return;
+                File f = resolvePath(path);
+                if (!f.exists()) { call.reject("File not found: " + path); return; }
+                if (f.length() > 10L * 1024 * 1024) { call.reject("File too large (>10MB)"); return; }
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+                    char[] buf = new char[8192]; int n;
+                    while ((n = r.read(buf)) != -1) sb.append(buf, 0, n);
                 }
-                
-                if (!file.isFile()) {
-                    JSObject ret = new JSObject();
-                    ret.put("value", "");
-                    ret.put("error", "Not a file: " + path);
-                    new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                    return;
-                }
-                
-                if (!file.canRead()) {
-                    JSObject ret = new JSObject();
-                    ret.put("value", "");
-                    ret.put("error", "Cannot read file (permission denied): " + path);
-                    new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                    return;
-                }
-                
-                long fileSize = file.length();
-                int maxRead = 2 * 1024 * 1024; // 2MB limit
-                
-                BufferedReader reader = new BufferedReader(new FileReader(file));
-                StringBuilder content = new StringBuilder();
-                char[] buffer = new char[8192];
-                int totalRead = 0;
-                int charsRead;
-                
-                while ((charsRead = reader.read(buffer)) != -1 && totalRead < maxRead) {
-                    content.append(buffer, 0, charsRead);
-                    totalRead += charsRead;
-                }
-                reader.close();
-                
-                if (totalRead >= maxRead) {
-                    content.append("\n... [File truncated at 2MB]");
-                }
-                
                 JSObject ret = new JSObject();
-                ret.put("value", content.toString());
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                
-            } catch (Exception e) {
-                JSObject ret = new JSObject();
-                ret.put("value", "");
-                ret.put("error", "Read error: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-            }
+                ret.put("content", sb.toString());
+                ret.put("size", f.length());
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
         }).start();
     }
-    
+
     @PluginMethod
     public void writeFile(PluginCall call) {
-        String path = call.getString("path", "");
-        String content = call.getString("content", "");
-        
-        if (path.isEmpty()) {
-            call.reject("Path is required");
-            return;
-        }
-        
+        final String path = call.getString("path", "");
+        final String content = call.getString("content", "");
         new Thread(() -> {
             try {
-                File file = resolvePath(path);
-                File parentDir = file.getParentFile();
-                if (parentDir != null && !parentDir.exists()) {
-                    parentDir.mkdirs();
+                File f = resolvePath(path);
+                File parent = f.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                try (FileOutputStream out = new FileOutputStream(f)) {
+                    out.write(content.getBytes(StandardCharsets.UTF_8));
                 }
-                
-                FileOutputStream fos = new FileOutputStream(file);
-                OutputStreamWriter writer = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-                writer.write(content);
-                writer.flush();
-                writer.close();
-                fos.close();
-                
                 JSObject ret = new JSObject();
                 ret.put("value", true);
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                
-            } catch (Exception e) {
-                JSObject ret = new JSObject();
-                ret.put("value", false);
-                ret.put("error", "Write error: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-            }
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
         }).start();
     }
-    
+
     @PluginMethod
-    public void listDir(PluginCall call) {
-        String path = call.getString("path", "");
-        boolean showHidden = call.getBoolean("showHidden", false);
-        
+    public void appendFile(PluginCall call) {
+        final String path = call.getString("path", "");
+        final String content = call.getString("content", "");
         new Thread(() -> {
             try {
-                File dir = resolvePath(path.isEmpty() ? workingDir : path);
-                if (!dir.exists()) {
-                    JSObject ret = new JSObject();
-                    ret.put("value", new JSArray());
-                    ret.put("error", "Directory not found: " + path);
-                    new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                    return;
+                File f = resolvePath(path);
+                File parent = f.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                try (FileOutputStream out = new FileOutputStream(f, true)) {
+                    out.write(content.getBytes(StandardCharsets.UTF_8));
                 }
-                
-                File[] files = dir.listFiles();
-                JSArray entries = new JSArray();
-                
-                if (files != null) {
-                    Arrays.sort(files, (a, b) -> {
-                        if (a.isDirectory() != b.isDirectory()) return a.isDirectory() ? -1 : 1;
-                        return a.getName().compareToIgnoreCase(b.getName());
-                    });
-                    
-                    for (File f : files) {
-                        if (!showHidden && f.getName().startsWith(".")) continue;
-                        
-                        JSObject entry = new JSObject();
-                        entry.put("name", f.getName());
-                        entry.put("path", f.getAbsolutePath());
-                        entry.put("isDir", f.isDirectory());
-                        entry.put("isFile", f.isFile());
-                        entry.put("size", f.length());
-                        entry.put("lastModified", f.lastModified());
-                        entry.put("canRead", f.canRead());
-                        entry.put("canWrite", f.canWrite());
-                        entries.put(entry);
-                    }
-                }
-                
                 JSObject ret = new JSObject();
-                ret.put("value", entries);
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-                
-            } catch (Exception e) {
-                JSObject ret = new JSObject();
-                ret.put("value", new JSArray());
-                ret.put("error", "List error: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-            }
+                ret.put("value", true);
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
         }).start();
     }
-    
+
+    @PluginMethod
+    public void fileEdit(PluginCall call) {
+        final String path = call.getString("path", "");
+        final String oldText = call.getString("oldText", "");
+        final String newText = call.getString("newText", "");
+        new Thread(() -> {
+            try {
+                File f = resolvePath(path);
+                if (!f.exists()) { call.reject("File not found: " + path); return; }
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+                    char[] buf = new char[8192]; int n;
+                    while ((n = r.read(buf)) != -1) sb.append(buf, 0, n);
+                }
+                String text = sb.toString();
+                int idx = text.indexOf(oldText);
+                if (idx == -1) { call.reject("old_text not found in file"); return; }
+                int last = text.lastIndexOf(oldText);
+                if (idx != last) { call.reject("old_text appears multiple times — make it unique"); return; }
+                String updated = text.substring(0, idx) + newText + text.substring(idx + oldText.length());
+                try (FileOutputStream out = new FileOutputStream(f)) {
+                    out.write(updated.getBytes(StandardCharsets.UTF_8));
+                }
+                JSObject ret = new JSObject();
+                ret.put("value", true);
+                ret.put("message", "replaced 1 occurrence");
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
+        }).start();
+    }
+
+    @PluginMethod
+    public void listDir(PluginCall call) {
+        final String path = call.getString("path", workingDir);
+        final boolean showHidden = call.getBoolean("showHidden", false);
+        try {
+            File dir = resolvePath(path);
+            if (!dir.exists() || !dir.isDirectory()) { call.reject("Not a directory: " + path); return; }
+            File[] files = dir.listFiles();
+            JSArray arr = new JSArray();
+            if (files != null) {
+                for (File f : files) {
+                    if (!showHidden && f.getName().startsWith(".")) continue;
+                    JSObject e = new JSObject();
+                    e.put("name", f.getName());
+                    e.put("isDir", f.isDirectory());
+                    e.put("size", f.length());
+                    e.put("modified", f.lastModified());
+                    arr.put(e);
+                }
+            }
+            JSObject ret = new JSObject(); ret.put("entries", arr);
+            call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
     @PluginMethod
     public void exists(PluginCall call) {
         String path = call.getString("path", "");
-        try {
-            File file = resolvePath(path);
-            JSObject ret = new JSObject();
-            ret.put("value", file.exists());
-            ret.put("isFile", file.isFile());
-            ret.put("isDir", file.isDirectory());
-            call.resolve(ret);
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("value", false);
-            call.resolve(ret);
-        }
+        JSObject ret = new JSObject();
+        try { ret.put("exists", resolvePath(path).exists()); }
+        catch (Exception e) { ret.put("exists", false); }
+        call.resolve(ret);
     }
-    
+
     @PluginMethod
     public void delete(PluginCall call) {
-        String path = call.getString("path", "");
-        boolean recursive = call.getBoolean("recursive", false);
-        try {
-            File file = resolvePath(path);
-            boolean deleted;
-            if (recursive && file.isDirectory()) {
-                deleted = deleteRecursive(file);
-            } else {
-                deleted = file.delete();
-            }
-            JSObject ret = new JSObject();
-            ret.put("value", deleted);
-            call.resolve(ret);
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("value", false);
-            call.resolve(ret);
-        }
-    }
-    
-    private boolean deleteRecursive(File file) {
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleteRecursive(child);
-                }
-            }
-        }
-        return file.delete();
-    }
-    
-    @PluginMethod
-    public void move(PluginCall call) {
-        String source = call.getString("source", "");
-        String destination = call.getString("destination", "");
-        try {
-            File src = resolvePath(source);
-            File dst = resolvePath(destination);
-            if (dst.getParentFile() != null) dst.getParentFile().mkdirs();
-            boolean moved = src.renameTo(dst);
-            JSObject ret = new JSObject();
-            ret.put("value", moved);
-            call.resolve(ret);
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("value", false);
-            call.resolve(ret);
-        }
-    }
-    
-    @PluginMethod
-    public void copy(PluginCall call) {
-        String source = call.getString("source", "");
-        String destination = call.getString("destination", "");
+        final String path = call.getString("path", "");
+        final boolean recursive = call.getBoolean("recursive", false);
         new Thread(() -> {
             try {
-                File src = resolvePath(source);
-                File dst = resolvePath(destination);
-                if (dst.getParentFile() != null) dst.getParentFile().mkdirs();
-                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                JSObject ret = new JSObject();
-                ret.put("value", true);
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-            } catch (Exception e) {
-                JSObject ret = new JSObject();
-                ret.put("value", false);
-                ret.put("error", "Copy error: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
-            }
+                File f = resolvePath(path);
+                if (!f.exists()) { call.reject("Not found: " + path); return; }
+                if (f.isDirectory() && recursive) deleteRecursive(f);
+                else if (!f.delete()) { call.reject("Cannot delete: " + path); return; }
+                JSObject ret = new JSObject(); ret.put("value", true);
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
         }).start();
     }
-    
+    private void deleteRecursive(File f) {
+        if (f.isDirectory()) {
+            File[] kids = f.listFiles();
+            if (kids != null) for (File k : kids) deleteRecursive(k);
+        }
+        f.delete();
+    }
+
     @PluginMethod
-    public void mkdir(PluginCall call) {
-        String path = call.getString("path", "");
-        try {
-            File dir = resolvePath(path);
-            boolean created = dir.mkdirs();
-            JSObject ret = new JSObject();
-            ret.put("value", created || dir.exists());
-            call.resolve(ret);
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("value", false);
-            call.resolve(ret);
+    public void move(PluginCall call) {
+        final String src = call.getString("source", "");
+        final String dst = call.getString("destination", "");
+        new Thread(() -> {
+            try {
+                File s = resolvePath(src);
+                File d = resolvePath(dst);
+                if (d.getParentFile() != null && !d.getParentFile().exists()) d.getParentFile().mkdirs();
+                Files.move(s.toPath(), d.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                JSObject ret = new JSObject(); ret.put("value", true);
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
+        }).start();
+    }
+
+    @PluginMethod
+    public void copy(PluginCall call) {
+        final String src = call.getString("source", "");
+        final String dst = call.getString("destination", "");
+        new Thread(() -> {
+            try {
+                File s = resolvePath(src);
+                File d = resolvePath(dst);
+                if (d.getParentFile() != null && !d.getParentFile().exists()) d.getParentFile().mkdirs();
+                if (s.isDirectory()) copyDir(s, d);
+                else Files.copy(s.toPath(), d.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                JSObject ret = new JSObject(); ret.put("value", true);
+                resolveOnMain(call, ret);
+            } catch (Exception e) { call.reject(e.getMessage()); }
+        }).start();
+    }
+    private void copyDir(File src, File dst) throws Exception {
+        if (!dst.exists()) dst.mkdirs();
+        File[] kids = src.listFiles();
+        if (kids == null) return;
+        for (File k : kids) {
+            File t = new File(dst, k.getName());
+            if (k.isDirectory()) copyDir(k, t);
+            else Files.copy(k.toPath(), t.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
     }
-    
+
+    @PluginMethod
+    public void mkdir(PluginCall call) {
+        try {
+            File f = resolvePath(call.getString("path", ""));
+            boolean ok = f.mkdirs() || f.isDirectory();
+            JSObject ret = new JSObject(); ret.put("value", ok);
+            call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
     @PluginMethod
     public void getHomeDir(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("value", Environment.getExternalStorageDirectory().getAbsolutePath());
         call.resolve(ret);
     }
-    
+
     @PluginMethod
     public void getWorkingDir(PluginCall call) {
-        JSObject ret = new JSObject();
-        ret.put("value", workingDir);
-        call.resolve(ret);
+        JSObject ret = new JSObject(); ret.put("value", workingDir); call.resolve(ret);
     }
-    
+
     @PluginMethod
     public void setWorkingDir(PluginCall call) {
         String dir = call.getString("dir", "");
         try {
-            File newDir = resolvePath(dir);
-            if (newDir.exists() && newDir.isDirectory()) {
-                workingDir = newDir.getAbsolutePath();
-                JSObject ret = new JSObject();
-                ret.put("value", true);
-                call.resolve(ret);
-            } else {
-                JSObject ret = new JSObject();
-                ret.put("value", false);
-                ret.put("error", "Not a directory: " + dir);
-                call.resolve(ret);
-            }
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("value", false);
-            call.resolve(ret);
-        }
+            File f = resolvePath(dir);
+            if (f.exists() && f.isDirectory()) {
+                workingDir = f.getAbsolutePath();
+                JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+            } else { call.reject("Not a directory: " + dir); }
+        } catch (Exception e) { call.reject(e.getMessage()); }
     }
 
     // ==========================================
-    // HTTP Request (Native - Bypasses CORS)
+    // HTTP
     // ==========================================
 
     @PluginMethod
     public void httpRequest(PluginCall call) {
-        String urlStr = call.getString("url", "");
-        String method = call.getString("method", "GET");
-        String body = call.getString("body", "");
-        JSObject headers = call.getObject("headers", new JSObject());
-        int timeoutSec = call.getInt("timeout", 120);
-        boolean followRedirects = call.getBoolean("followRedirects", true);
-        int retryCount = call.getInt("retries", 3);
-        
-        if (urlStr.isEmpty()) {
-            call.reject("URL is required");
-            return;
-        }
-        
-        int timeoutMs = timeoutSec * 1000;
-        int connectTimeoutMs = Math.max(timeoutMs, 30000);
-        int readTimeoutMs = Math.max(timeoutMs, 60000);
-        
-        final int finalConnectTimeout = connectTimeoutMs;
-        final int finalReadTimeout = readTimeoutMs;
-        final int finalRetries = retryCount;
-        
+        final String urlStr = call.getString("url", "");
+        final String method = call.getString("method", "GET");
+        final String body = call.getString("body", "");
+        final JSObject headers = call.getObject("headers", new JSObject());
+        final int timeoutSec = call.getInt("timeout", 120);
+        final boolean followRedirects = call.getBoolean("followRedirects", true);
+        final int retries = call.getInt("retries", 2);
+
+        if (urlStr == null || urlStr.isEmpty()) { call.reject("url required"); return; }
+
         new Thread(() -> {
-            Exception lastError = null;
-            
-            for (int attempt = 0; attempt < finalRetries; attempt++) {
+            Exception last = null;
+            for (int attempt = 0; attempt <= retries; attempt++) {
                 try {
-                    if (attempt > 0) {
-                        Thread.sleep(Math.min(2000 * (1 << attempt), 10000));
-                        Log.i(TAG, "HTTP retry attempt " + (attempt + 1) + " for " + urlStr);
-                    }
-                    
+                    if (attempt > 0) Thread.sleep(Math.min(1500L * attempt, 4000L));
+
                     URL url = new URL(urlStr);
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                     conn.setRequestMethod(method);
-                    conn.setConnectTimeout(finalConnectTimeout);
-                    conn.setReadTimeout(finalReadTimeout);
+                    conn.setConnectTimeout(Math.max(timeoutSec * 1000, 20000));
+                    conn.setReadTimeout(Math.max(timeoutSec * 1000, 60000));
                     conn.setInstanceFollowRedirects(followRedirects);
-                    
-                    // Default headers
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36");
+
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36");
                     conn.setRequestProperty("Accept", "*/*");
                     conn.setRequestProperty("Accept-Encoding", "identity");
-                    
-                    // Apply custom headers
+
                     Iterator<String> keys = headers.keys();
                     while (keys.hasNext()) {
-                        String key = keys.next();
-                        conn.setRequestProperty(key, headers.getString(key));
+                        String k = keys.next();
+                        conn.setRequestProperty(k, headers.getString(k));
                     }
-                    
-                    // Write body
-                    if (!body.isEmpty() && (method.equals("POST") || method.equals("PUT") || method.equals("PATCH"))) {
+
+                    if (body != null && !body.isEmpty() && ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))) {
                         conn.setDoOutput(true);
-                        byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
-                        conn.setRequestProperty("Content-Length", String.valueOf(bodyBytes.length));
-                        conn.getOutputStream().write(bodyBytes);
+                        byte[] b = body.getBytes(StandardCharsets.UTF_8);
+                        conn.setRequestProperty("Content-Length", String.valueOf(b.length));
+                        conn.getOutputStream().write(b);
                         conn.getOutputStream().flush();
                     }
-                    
-                    int responseCode = conn.getResponseCode();
-                    
-                    BufferedReader reader;
-                    if (responseCode >= 200 && responseCode < 400) {
-                        reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                    } else {
-                        java.io.InputStream errStream = conn.getErrorStream();
-                        if (errStream != null) {
-                            reader = new BufferedReader(new InputStreamReader(errStream, StandardCharsets.UTF_8));
-                        } else {
-                            reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                        }
+
+                    int code = conn.getResponseCode();
+                    java.io.InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
+                    if (is == null) is = conn.getInputStream();
+
+                    StringBuilder resp = new StringBuilder();
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                        char[] buf = new char[8192]; int n; int total = 0; int max = 4 * 1024 * 1024;
+                        while ((n = r.read(buf)) != -1 && total < max) { resp.append(buf, 0, n); total += n; }
                     }
-                    
-                    StringBuilder response = new StringBuilder();
-                    char[] buffer = new char[8192];
-                    int totalRead = 0;
-                    int maxResponseSize = 2 * 1024 * 1024;
-                    int charsRead;
-                    
-                    while ((charsRead = reader.read(buffer)) != -1 && totalRead < maxResponseSize) {
-                        response.append(buffer, 0, charsRead);
-                        totalRead += charsRead;
-                    }
-                    reader.close();
-                    
+
                     JSObject ret = new JSObject();
-                    ret.put("status", responseCode);
-                    ret.put("body", response.toString());
-                    
-                    new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
+                    ret.put("status", code);
+                    ret.put("body", resp.toString());
+                    resolveOnMain(call, ret);
                     return;
-                    
                 } catch (Exception e) {
-                    lastError = e;
+                    last = e;
                     Log.w(TAG, "HTTP attempt " + (attempt + 1) + " failed: " + e.getMessage());
                 }
             }
-            
-            // All retries failed
-            String errorMsg = lastError != null ? lastError.getMessage() : "Unknown error";
-            
             JSObject ret = new JSObject();
-            ret.put("status", -1);
+            ret.put("status", 0);
             ret.put("body", "");
-            ret.put("error", "Network error: " + errorMsg);
-            new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
+            ret.put("error", last != null ? last.getMessage() : "Network error");
+            resolveOnMain(call, ret);
         }).start();
     }
 
     // ==========================================
-    // Device Info
+    // Clipboard / Toast / Vibrate / Device
     // ==========================================
+
+    @PluginMethod
+    public void readClipboard(PluginCall call) {
+        try {
+            ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            String text = "";
+            if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip() != null
+                && cm.getPrimaryClip().getItemCount() > 0) {
+                CharSequence cs = cm.getPrimaryClip().getItemAt(0).getText();
+                if (cs != null) text = cs.toString();
+            }
+            JSObject ret = new JSObject(); ret.put("value", text); call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
+    @PluginMethod
+    public void writeClipboard(PluginCall call) {
+        final String text = call.getString("text", "");
+        try {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("OpenCode", text));
+            });
+            JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
+    @PluginMethod
+    public void showToast(PluginCall call) {
+        final String message = call.getString("message", "");
+        try {
+            new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show());
+            JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
+    @PluginMethod
+    public void vibrate(PluginCall call) {
+        final int ms = call.getInt("ms", 30);
+        try {
+            Vibrator v = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    v.vibrate(ms);
+                }
+            }
+            JSObject ret = new JSObject(); ret.put("value", true); call.resolve(ret);
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
 
     @PluginMethod
     public void getDeviceInfo(PluginCall call) {
@@ -696,63 +575,40 @@ public class OpenCodeBridgePlugin extends Plugin {
             ret.put("brand", Build.BRAND);
             ret.put("androidVersion", Build.VERSION.RELEASE);
             ret.put("sdkVersion", Build.VERSION.SDK_INT);
-            ret.put("isRooted", isDeviceRooted());
-            ret.put("abis", new JSArray(Build.SUPPORTED_ABIS));
-            
-            // Storage info
-            File dataDir = Environment.getDataDirectory();
-            ret.put("totalStorage", dataDir.getTotalSpace());
-            ret.put("freeStorage", dataDir.getFreeSpace());
-            
+            ret.put("isRooted", isRooted());
+            JSArray abis = new JSArray();
+            for (String a : Build.SUPPORTED_ABIS) abis.put(a);
+            ret.put("abis", abis);
+            File data = Environment.getDataDirectory();
+            ret.put("totalStorage", data.getTotalSpace());
+            ret.put("freeStorage", data.getFreeSpace());
             call.resolve(ret);
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("error", e.getMessage());
-            call.resolve(ret);
-        }
-    }
-    
-    private boolean isDeviceRooted() {
-        try {
-            String[] paths = {"/system/app/Superuser.apk", "/sbin/su", "/system/bin/su", "/system/xbin/su", "/data/local/xbin/su", "/data/local/bin/su"};
-            for (String path : paths) {
-                if (new File(path).exists()) return true;
-            }
-            Process process = Runtime.getRuntime().exec(new String[]{"which", "su"});
-            return process.waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
+        } catch (Exception e) { call.reject(e.getMessage()); }
     }
 
-    @PluginMethod
-    public void showToast(PluginCall call) {
-        String message = call.getString("message", "");
+    private boolean isRooted() {
         try {
-            new Handler(Looper.getMainLooper()).post(() -> {
-                Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show();
-            });
-            JSObject ret = new JSObject();
-            ret.put("value", true);
-            call.resolve(ret);
-        } catch (Exception e) {
-            JSObject ret = new JSObject();
-            ret.put("value", false);
-            call.resolve(ret);
-        }
+            String[] paths = {"/system/app/Superuser.apk", "/sbin/su", "/system/bin/su",
+                              "/system/xbin/su", "/data/local/xbin/su", "/data/local/bin/su"};
+            for (String p : paths) if (new File(p).exists()) return true;
+            Process pr = Runtime.getRuntime().exec(new String[]{"which", "su"});
+            return pr.waitFor() == 0;
+        } catch (Exception e) { return false; }
     }
-    
+
     // ==========================================
-    // Path Resolution
+    // Helpers
     // ==========================================
-    
+
     private File resolvePath(String path) {
-        if (path.startsWith("/")) {
-            return new File(path);
-        }
-        if (path.startsWith("~/") || path.startsWith("~\\")) {
-            return new File(workingDir, path.substring(2));
-        }
+        if (path == null || path.isEmpty()) return new File(workingDir);
+        if (path.startsWith("/")) return new File(path);
+        if (path.startsWith("~/") || path.startsWith("~\\")) return new File(workingDir, path.substring(2));
+        if (path.equals("~")) return new File(workingDir);
         return new File(workingDir, path);
+    }
+
+    private void resolveOnMain(PluginCall call, JSObject ret) {
+        new Handler(Looper.getMainLooper()).post(() -> call.resolve(ret));
     }
 }

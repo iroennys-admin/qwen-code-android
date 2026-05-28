@@ -1,8 +1,8 @@
 // ==========================================
-// OpenCode Android - Agent Engine
+// OpenCode Android v2 - Agent Loop
 // ==========================================
 
-import type { AppConfig, OpenCodeMessage, ApiMessage, ApiToolCall, AgentState, StreamChunk } from '../types';
+import type { AppConfig, OpenCodeMessage, ApiMessage, ApiToolCall, AgentState, OpenCodeToolCall } from '../types';
 import { streamChatCompletion } from './api';
 import { executeToolCall } from './bridge';
 import { SYSTEM_PROMPT } from '../utils/config';
@@ -11,52 +11,39 @@ export interface AgentCallbacks {
   onStateChange: (state: AgentState) => void;
   onContent: (text: string) => void;
   onThinking: (text: string) => void;
-  onToolCall: (tc: any) => void;
-  onToolStart: (toolCallId: string) => void;
-  onToolResult: (toolCallId: string, output: string, error?: string) => void;
-  onToolApproval: (tc: any) => Promise<boolean>;
+  onToolCall: (tc: OpenCodeToolCall) => void;
+  onToolStart: (id: string) => void;
+  onToolResult: (id: string, output: string, error?: string) => void;
+  onToolApproval: (tc: OpenCodeToolCall) => Promise<boolean>;
+  onUsage?: (u: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
   onDone: () => void;
-  onError: (error: string) => void;
+  onError: (err: string) => void;
   shouldAbort: () => boolean;
 }
 
 export function chatMessagesToApiMessages(messages: OpenCodeMessage[]): ApiMessage[] {
   const result: ApiMessage[] = [];
-
   for (const msg of messages) {
     if (msg.role === 'user') {
       result.push({ role: 'user', content: msg.content });
     } else if (msg.role === 'assistant') {
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        const apiToolCalls: ApiToolCall[] = msg.toolCalls.map(tc => ({
+      if (msg.toolCalls && msg.toolCalls.length) {
+        const tcs: ApiToolCall[] = msg.toolCalls.map(tc => ({
           id: tc.id,
-          type: 'function' as const,
-          function: {
-            name: tc.name,
-            arguments: JSON.stringify(tc.params),
-          },
+          type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.params) },
         }));
-        result.push({
-          role: 'assistant',
-          content: msg.content || null,
-          tool_calls: apiToolCalls,
-        });
-        // Add tool results
+        result.push({ role: 'assistant', content: msg.content || null, tool_calls: tcs });
         for (const tc of msg.toolCalls) {
           if (tc.output !== undefined) {
-            result.push({
-              role: 'tool',
-              tool_call_id: tc.id,
-              content: tc.output || '',
-            });
+            result.push({ role: 'tool', tool_call_id: tc.id, content: tc.output || '' });
           }
         }
-      } else {
+      } else if (msg.content) {
         result.push({ role: 'assistant', content: msg.content });
       }
     }
   }
-
   return result;
 }
 
@@ -64,135 +51,103 @@ export async function runAgentLoop(
   config: AppConfig,
   history: ApiMessage[],
   userMessage: string,
-  callbacks: AgentCallbacks,
+  cb: AgentCallbacks,
 ): Promise<void> {
-  const systemMsg: ApiMessage = {
-    role: 'system',
-    content: config.systemPrompt || SYSTEM_PROMPT,
-  };
-
-  let currentMessages: ApiMessage[] = [
-    systemMsg,
-    ...history,
-    { role: 'user' as const, content: userMessage },
-  ];
-
+  const sys: ApiMessage = { role: 'system', content: config.systemPrompt || SYSTEM_PROMPT };
+  let convo: ApiMessage[] = [sys, ...history, { role: 'user', content: userMessage }];
+  const maxSteps = config.maxAgentSteps || 25;
   let step = 0;
-  const maxSteps = config.maxAgentSteps || 30;
 
   while (step < maxSteps) {
-    if (callbacks.shouldAbort()) break;
+    if (cb.shouldAbort()) return;
     step++;
+    cb.onStateChange({ status: 'thinking', currentStep: step, totalSteps: maxSteps });
 
-    callbacks.onStateChange({
-      status: 'thinking',
-      currentStep: step,
-      totalSteps: maxSteps,
-    });
+    let hasToolCalls = false;
+    const collected: OpenCodeToolCall[] = [];
 
     try {
-      const stream = streamChatCompletion(config, currentMessages);
-      let hasToolCalls = false;
-      const toolCallsCollected: any[] = [];
-
+      const stream = streamChatCompletion(config, convo);
       for await (const chunk of stream) {
-        if (callbacks.shouldAbort()) break;
-
+        if (cb.shouldAbort()) return;
         switch (chunk.type) {
-          case 'content':
-            if (chunk.content) callbacks.onContent(chunk.content);
-            break;
-
-          case 'thinking':
-            if (chunk.thinking) callbacks.onThinking(chunk.thinking);
-            break;
-
+          case 'content':  if (chunk.content) cb.onContent(chunk.content); break;
+          case 'thinking': if (chunk.thinking) cb.onThinking(chunk.thinking); break;
           case 'tool_call':
             if (chunk.toolCall) {
               hasToolCalls = true;
-              toolCallsCollected.push(chunk.toolCall);
-              callbacks.onToolCall(chunk.toolCall);
+              collected.push(chunk.toolCall);
+              cb.onToolCall(chunk.toolCall);
             }
             break;
-
-          case 'error':
-            callbacks.onError(chunk.error || 'Unknown error');
-            return;
-
-          case 'done':
+          case 'usage':
+            if (chunk.usage && cb.onUsage) cb.onUsage(chunk.usage);
             break;
+          case 'error':
+            cb.onError(chunk.error || 'Unknown error');
+            return;
+          case 'done': break;
         }
       }
+    } catch (err: any) {
+      cb.onError(err?.message || 'Agent loop error');
+      return;
+    }
 
-      if (!hasToolCalls) {
-        callbacks.onDone();
-        return;
-      }
+    if (!hasToolCalls) {
+      cb.onDone();
+      return;
+    }
 
-      // Execute tool calls
-      for (const tc of toolCallsCollected) {
-        if (callbacks.shouldAbort()) break;
+    // Execute tools
+    for (const tc of collected) {
+      if (cb.shouldAbort()) return;
 
-        // Check approval
-        if (tc.requiresApproval && config.approvalMode !== 'yolo') {
-          const approved = await callbacks.onToolApproval(tc);
-          if (!approved) {
+      if (tc.requiresApproval && config.approvalMode !== 'yolo') {
+        if (config.approvalMode === 'auto_edit' && (tc.name === 'file_edit' || tc.name === 'file_write' || tc.name === 'file_append' || tc.name === 'mkdir')) {
+          // auto-approve safe file ops
+        } else {
+          const ok = await cb.onToolApproval(tc);
+          if (!ok) {
             tc.output = 'Denied by user';
-            tc.status = 'error';
-            callbacks.onToolResult(tc.id, 'Denied by user', 'Denied');
+            tc.status = 'denied';
+            cb.onToolResult(tc.id, 'Denied by user', 'denied');
             continue;
           }
         }
-
-        callbacks.onToolStart(tc.id);
-        callbacks.onStateChange({
-          status: 'executing',
-          currentStep: step,
-          totalSteps: maxSteps,
-          currentTool: tc.name,
-        });
-
-        try {
-          const result = await executeToolCall(tc.name, tc.params, config);
-          tc.output = result.output || result.stdout || '';
-          tc.status = 'completed';
-          callbacks.onToolResult(tc.id, tc.output);
-        } catch (err: any) {
-          tc.output = err.message || 'Tool execution failed';
-          tc.status = 'error';
-          callbacks.onToolResult(tc.id, tc.output, err.message);
-        }
       }
 
-      // Update message history for next iteration
-      const assistantToolCalls: ApiToolCall[] = toolCallsCollected.map(tc => ({
+      cb.onToolStart(tc.id);
+      cb.onStateChange({ status: 'executing', currentStep: step, totalSteps: maxSteps, currentTool: tc.name });
+      tc.startedAt = Date.now();
+      try {
+        const r = await executeToolCall(tc.name, tc.params, config);
+        tc.output = r.output;
+        tc.status = 'completed';
+        tc.duration = Date.now() - tc.startedAt;
+        cb.onToolResult(tc.id, r.output);
+      } catch (err: any) {
+        tc.output = err?.message || 'Tool execution failed';
+        tc.status = 'error';
+        tc.duration = Date.now() - tc.startedAt;
+        cb.onToolResult(tc.id, tc.output, tc.output);
+      }
+    }
+
+    // Push to conversation
+    convo.push({
+      role: 'assistant',
+      content: null,
+      tool_calls: collected.map(tc => ({
         id: tc.id,
         type: 'function' as const,
-        function: {
-          name: tc.name,
-          arguments: JSON.stringify(tc.params),
-        },
-      }));
-
-      currentMessages.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: assistantToolCalls,
-      });
-
-      for (const tc of toolCallsCollected) {
-        currentMessages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: tc.output || '',
-        });
-      }
-
-    } catch (err: any) {
-      callbacks.onError(err.message || 'Agent loop error');
-      return;
+        function: { name: tc.name, arguments: JSON.stringify(tc.params) },
+      })),
+    });
+    for (const tc of collected) {
+      convo.push({ role: 'tool', tool_call_id: tc.id, content: tc.output || '' });
     }
   }
 
-  callbacks.onDone();
+  cb.onDone();
 }

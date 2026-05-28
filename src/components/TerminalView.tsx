@@ -1,193 +1,237 @@
 // ==========================================
-// OpenCode Android - Terminal View
+// OpenCode v2 - Built-in Terminal
+// Built-in commands: opencode, oc, help, clear, providers, models
+// Falls back to shell on Android device.
 // ==========================================
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import type { AppConfig } from '../types';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { executeShell, isNative } from '../services/bridge';
+import { runOpencodeCommand, type CliEnv } from '../services/opencode-cli';
+import type { AppConfig } from '../types';
 
-interface TerminalViewProps {
+interface Line { type: 'cmd' | 'stdout' | 'stderr' | 'info' | 'prompt'; text: string; }
+
+interface Props {
   config: AppConfig;
+  onConfigChange: (c: AppConfig) => void;
 }
 
-interface TerminalLine {
-  type: 'input' | 'output' | 'error' | 'info';
-  text: string;
+// Tokenize a command line respecting quotes
+function tokenize(s: string): string[] {
+  const out: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) out.push(m[1] ?? m[2] ?? m[3]);
+  return out;
 }
 
-export default function TerminalView({ config }: TerminalViewProps) {
-  const [lines, setLines] = useState<TerminalLine[]>([
-    { type: 'info', text: 'OpenCode Terminal v1.0' },
-    { type: 'info', text: 'Escribe comandos y presiona Enter para ejecutar.' },
-    { type: 'info', text: '' },
+export default function TerminalView({ config, onConfigChange }: Props) {
+  const [lines, setLines] = useState<Line[]>([
+    { type: 'info',   text: '╔══════════════════════════════════════════════╗\n║  ◆ OpenCode Terminal                         ║\n║  Try:  opencode  ·  help  ·  ls -la /sdcard  ║\n╚══════════════════════════════════════════════╝\n' },
+    { type: 'info',   text: isNative() ? `cwd: ${config.workingDir}\n` : `[Web preview — system shell limited]\n` },
   ]);
-  const [input, setInput] = useState('');
+  const [cmd, setCmd] = useState('');
+  const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [isRunning, setIsRunning] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [histIdx, setHistIdx] = useState(-1);
+  const [interactivePrompt, setInteractivePrompt] = useState<string | null>(null);
+  const outRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const readLineResolverRef = useRef<((s: string | null) => void) | null>(null);
+  const configRef = useRef(config);
+  useEffect(() => { configRef.current = config; }, [config]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lines]);
+    outRef.current?.scrollTo({ top: outRef.current.scrollHeight });
+  }, [lines, running, interactivePrompt]);
 
-  const executeCommand = useCallback(async (cmd: string) => {
-    if (!cmd.trim()) return;
-
-    setLines(prev => [...prev, { type: 'input', text: `$ ${cmd}` }]);
-    setHistory(prev => [...prev, cmd]);
-    setHistoryIndex(-1);
-    setIsRunning(true);
-
-    try {
-      const result = await executeShell(cmd, 60);
-
-      if (result.stdout) {
-        setLines(prev => [...prev, { type: 'output', text: result.stdout }]);
+  const print = useCallback((text: string, type: 'stdout' | 'stderr' | 'info' = 'stdout') => {
+    setLines(l => {
+      const last = l[l.length - 1];
+      // Coalesce streaming chunks of same type
+      if (last && last.type === type && !text.includes('\n') && last.text.length < 8192) {
+        const copy = l.slice(0, -1);
+        copy.push({ type, text: last.text + text });
+        return copy;
       }
-      if (result.stderr) {
-        setLines(prev => [...prev, { type: 'error', text: result.stderr }]);
-      }
-      if (result.exitCode !== 0 && !result.stderr) {
-        setLines(prev => [...prev, { type: 'error', text: `[Exit code: ${result.exitCode}]` }]);
-      }
-    } catch (err: any) {
-      setLines(prev => [...prev, { type: 'error', text: err.message }]);
-    } finally {
-      setIsRunning(false);
-    }
+      return [...l, { type, text }];
+    });
   }, []);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+  const readLine = useCallback((prompt: string): Promise<string | null> => {
+    return new Promise(resolve => {
+      setInteractivePrompt(prompt);
+      readLineResolverRef.current = resolve;
+      setTimeout(() => inputRef.current?.focus(), 50);
+    });
+  }, []);
+
+  const runCmd = useCallback(async (command: string) => {
+    if (!command.trim()) return;
+
+    // If we're in an interactive readLine, deliver the answer
+    if (readLineResolverRef.current) {
+      const resolve = readLineResolverRef.current;
+      readLineResolverRef.current = null;
+      const prompt = interactivePrompt || '';
+      setInteractivePrompt(null);
+      setLines(l => [...l, { type: 'cmd', text: `${prompt}${command}\n` }]);
+      setCmd('');
+      resolve(command);
+      return;
+    }
+
+    setRunning(true);
+    setLines(l => [...l, { type: 'cmd', text: `$ ${command}\n` }]);
+    setHistory(h => [...h, command]);
+    setHistIdx(-1);
+    setCmd('');
+
+    const tokens = tokenize(command);
+    const head = tokens[0];
+
+    // ---- Built-in commands ----
+    if (head === 'clear' || head === 'cls') {
+      setLines([]);
+      setRunning(false);
+      return;
+    }
+
+    if (head === 'help') {
+      print(`OpenCode Terminal\n\n` +
+            `Built-in commands:\n` +
+            `  opencode [prompt]    AI agent (REPL or one-shot)\n` +
+            `  oc [prompt]          Short alias of opencode\n` +
+            `  providers            List AI providers\n` +
+            `  models               List models for active provider\n` +
+            `  clear                Clear screen\n` +
+            `  cd <dir>             Change directory (sets working dir)\n` +
+            `  exit                 (no-op)\n` +
+            `\nAnything else runs as a shell command on the device.\n`, 'info');
+      setRunning(false);
+      return;
+    }
+
+    if (head === 'cd') {
+      const target = tokens[1] || '/sdcard';
+      onConfigChange({ ...configRef.current, workingDir: target });
+      print(`cwd: ${target}\n`, 'info');
+      setRunning(false);
+      return;
+    }
+
+    if (head === 'providers') {
+      for (const p of config.providers) {
+        const star = p.id === config.activeProvider ? '*' : ' ';
+        print(` ${star} ${(p.emoji || '·')} ${p.id.padEnd(12)} ${p.name}${p.isFree ? ' [FREE]' : ''}${p.apiKey ? ' 🔑' : ''}\n`);
+      }
+      setRunning(false);
+      return;
+    }
+    if (head === 'models') {
+      const p = config.providers.find(x => x.id === config.activeProvider);
+      if (p) for (const m of p.models) {
+        const star = m.id === config.activeModel ? '*' : ' ';
+        print(` ${star} ${m.id} — ${m.name}${m.isFree ? ' [FREE]' : ''}\n`);
+      }
+      setRunning(false);
+      return;
+    }
+
+    if (head === 'opencode' || head === 'oc') {
+      const env: CliEnv = {
+        config: configRef.current,
+        saveConfig: (c) => { onConfigChange(c); configRef.current = c; },
+        print,
+        readLine,
+        setBusy: setRunning,
+      };
+      try {
+        await runOpencodeCommand(tokens.slice(1), env);
+      } catch (e: any) {
+        print(`\n✗ ${e.message || e}\n`, 'stderr');
+      } finally {
+        setRunning(false);
+      }
+      return;
+    }
+
+    if (head === 'exit') {
+      print('(use back button to leave terminal)\n', 'info');
+      setRunning(false);
+      return;
+    }
+
+    // ---- Fallback to system shell ----
+    try {
+      const r = await executeShell(command, 60, config.workingDir);
+      if (r.stdout) print(r.stdout);
+      if (r.stderr) print(r.stderr, 'stderr');
+      if (r.exitCode !== 0) print(`\n[exit ${r.exitCode}]\n`, 'stderr');
+    } catch (err: any) {
+      print((err?.message || String(err)) + '\n', 'stderr');
+    } finally {
+      setRunning(false);
+    }
+  }, [config, interactivePrompt, print, readLine, onConfigChange]);
+
+  const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); runCmd(cmd); }
+    else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      const cmd = input.trim();
-      setInput('');
-      executeCommand(cmd);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (history.length > 0) {
-        const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
-        setHistoryIndex(newIndex);
-        setInput(history[newIndex]);
+      if (history.length) {
+        const idx = histIdx < 0 ? history.length - 1 : Math.max(0, histIdx - 1);
+        setHistIdx(idx); setCmd(history[idx]);
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (historyIndex >= 0) {
-        const newIndex = historyIndex + 1;
-        if (newIndex >= history.length) {
-          setHistoryIndex(-1);
-          setInput('');
-        } else {
-          setHistoryIndex(newIndex);
-          setInput(history[newIndex]);
-        }
+      if (histIdx >= 0) {
+        const idx = histIdx + 1;
+        if (idx >= history.length) { setHistIdx(-1); setCmd(''); }
+        else { setHistIdx(idx); setCmd(history[idx]); }
       }
-    }
-  }, [input, history, historyIndex, executeCommand]);
-
-  const lineColor = (type: TerminalLine['type']) => {
-    switch (type) {
-      case 'input': return 'var(--accent-green)';
-      case 'output': return 'var(--text-primary)';
-      case 'error': return 'var(--error)';
-      case 'info': return 'var(--text-tertiary)';
+    } else if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
+      if (readLineResolverRef.current) {
+        readLineResolverRef.current(null);
+        readLineResolverRef.current = null;
+        setInteractivePrompt(null);
+      }
+      print('^C\n', 'stderr');
+      setCmd('');
+      setRunning(false);
     }
   };
 
+  const promptText = interactivePrompt || '$';
+  const placeholder =
+    interactivePrompt ? '' :
+    running ? 'ejecutando…' : 'comando';
+
   return (
-    <div style={{
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      background: '#0d1117',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-sm)',
-        padding: '6px var(--space-md)',
-        background: 'rgba(13, 17, 23, 0.95)',
-        borderBottom: '1px solid var(--border-primary)',
-      }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57', display: 'inline-block' }} />
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e', display: 'inline-block' }} />
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840', display: 'inline-block' }} />
-        </div>
-        <span style={{
-          fontSize: 12,
-          color: 'var(--accent-green)',
-          fontWeight: 600,
-          flex: 1,
-          textAlign: 'center',
-          fontFamily: 'var(--font-mono)',
-        }}>
-          Terminal — OpenCode
-        </span>
-        <button
-          onClick={() => setLines([{ type: 'info', text: 'Terminal cleared.' }])}
-          style={{
-            background: 'none',
-            border: '1px solid var(--border-primary)',
-            color: 'var(--text-tertiary)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '2px 8px',
-            fontSize: 11,
-            cursor: 'pointer',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          Clear
-        </button>
-      </div>
-
-      {/* Terminal Output */}
-      <div style={{
-        flex: 1,
-        overflow: 'auto',
-        padding: 'var(--space-sm) var(--space-md)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 13,
-        lineHeight: 1.5,
-      }}>
-        {lines.map((line, i) => (
-          <div key={i} style={{
-            color: lineColor(line.type),
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}>
-            {line.text}
-          </div>
+    <div className="terminal">
+      <div className="terminal-output scroll" ref={outRef}>
+        {lines.map((l, i) => (
+          <span key={i} className={l.type}>{l.text}</span>
         ))}
-        <div ref={bottomRef} />
+        {interactivePrompt && (
+          <span className="prompt">{interactivePrompt}</span>
+        )}
+        {running && !interactivePrompt && (
+          <span className="cmd"><span className="typing"><span /><span /><span /></span></span>
+        )}
       </div>
-
-      {/* Input */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        padding: 'var(--space-sm) var(--space-md)',
-        borderTop: '1px solid var(--border-primary)',
-        fontFamily: 'var(--font-mono)',
-      }}>
-        <span style={{ color: 'var(--accent-green)', fontWeight: 700, marginRight: 8 }}>$</span>
+      <div className="terminal-input">
+        <span>{interactivePrompt ? '›' : '$'}</span>
         <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isRunning}
-          placeholder={isRunning ? 'Ejecutando...' : 'Comando...'}
-          style={{
-            flex: 1,
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-primary)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 13,
-            outline: 'none',
-          }}
+          ref={inputRef}
+          value={cmd}
+          onChange={e => setCmd(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder={placeholder}
+          disabled={running && !interactivePrompt}
+          autoCorrect="off" autoCapitalize="off" spellCheck={false}
         />
       </div>
     </div>

@@ -1,544 +1,270 @@
 // ==========================================
-// OpenCode Android - Main App
+// OpenCode v2 - Main App
 // ==========================================
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import type { AppConfig, OpenCodeMessage, ViewMode, OpenCodeToolCall, AgentState, ApiMessage } from './types';
-import { DEFAULT_CONFIG } from './utils/config';
+import type { AppConfig, OpenCodeMessage, ViewMode, OpenCodeToolCall, AgentState, Provider } from './types';
+import { DEFAULT_CONFIG, CONFIG_VERSION } from './utils/config';
 import { runAgentLoop, chatMessagesToApiMessages } from './services/agent';
-import { isNative } from './services/bridge';
-import Sidebar from './components/Sidebar';
-import OpenCodeChat from './components/OpenCodeChat';
+import { vibrate } from './services/bridge';
+
+import ChatView from './components/ChatView';
+import SettingsView from './components/SettingsView';
 import TerminalView from './components/TerminalView';
 import FileExplorer from './components/FileExplorer';
-import SettingsView from './components/SettingsView';
+import AboutView from './components/AboutView';
 
-const CONFIG_VERSION = 8;
-
+// ---------- Persistence ----------
 function loadConfig(): AppConfig {
   try {
-    const savedVersion = localStorage.getItem('opencode_config_version');
-    if (savedVersion && parseInt(savedVersion) >= CONFIG_VERSION) {
-      const saved = localStorage.getItem('opencode_config');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const merged = {
-          ...DEFAULT_CONFIG,
-          ...parsed,
-          providers: parsed.providers?.map((p: any) => ({
-            ...DEFAULT_CONFIG.providers.find(dp => dp.id === p.id),
-            ...p,
-            models: DEFAULT_CONFIG.providers.find(dp => dp.id === p.id)?.models || p.models || []
-          })) || DEFAULT_CONFIG.providers
-        };
-        return merged;
+    const v = localStorage.getItem('oc_config_version');
+    if (v && parseInt(v, 10) >= CONFIG_VERSION) {
+      const raw = localStorage.getItem('oc_config');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Re-merge providers with current defaults so new ones appear
+        const providers: Provider[] = DEFAULT_CONFIG.providers.map(dp => {
+          const existing = parsed.providers?.find((p: any) => p.id === dp.id);
+          return existing
+            ? { ...dp, apiKey: existing.apiKey || '', baseUrl: existing.baseUrl || dp.baseUrl, proxyBaseUrl: existing.proxyBaseUrl ?? dp.proxyBaseUrl }
+            : dp;
+        });
+        return { ...DEFAULT_CONFIG, ...parsed, providers };
       }
     }
-    localStorage.setItem('opencode_config_version', String(CONFIG_VERSION));
+    localStorage.setItem('oc_config_version', String(CONFIG_VERSION));
   } catch {}
   return DEFAULT_CONFIG;
 }
 
-function saveConfig(config: AppConfig) {
-  try {
-    localStorage.setItem('opencode_config', JSON.stringify(config));
-  } catch {}
+function saveConfig(c: AppConfig) {
+  try { localStorage.setItem('oc_config', JSON.stringify(c)); } catch {}
 }
 
 function loadMessages(): OpenCodeMessage[] {
   try {
-    const saved = localStorage.getItem('opencode_messages');
-    if (saved) return JSON.parse(saved);
+    const raw = localStorage.getItem('oc_messages');
+    if (raw) return JSON.parse(raw);
   } catch {}
   return [];
 }
 
-function saveMessages(messages: OpenCodeMessage[]) {
-  try {
-    localStorage.setItem('opencode_messages', JSON.stringify(messages.slice(-200)));
-  } catch {}
+function saveMessages(m: OpenCodeMessage[]) {
+  try { localStorage.setItem('oc_messages', JSON.stringify(m.slice(-200))); } catch {}
 }
 
+// ---------- App ----------
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(loadConfig);
   const [messages, setMessages] = useState<OpenCodeMessage[]>(loadMessages);
   const [view, setView] = useState<ViewMode>('chat');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [agentState, setAgentState] = useState<AgentState>({ status: 'idle', currentStep: 0, totalSteps: 0 });
+  const [pendingApproval, setPendingApproval] = useState<OpenCodeToolCall | null>(null);
   const abortRef = useRef(false);
+  const approvalRef = useRef<((ok: boolean) => void) | null>(null);
 
   useEffect(() => { saveConfig(config); }, [config]);
   useEffect(() => { saveMessages(messages); }, [messages]);
+  useEffect(() => { document.documentElement.setAttribute('data-theme', config.theme); }, [config.theme]);
+  useEffect(() => { document.documentElement.style.setProperty('--ui-font-size', `${config.fontSize}px`); document.body.style.fontSize = `${config.fontSize}px`; }, [config.fontSize]);
 
-  const activeProvider = config.providers.find(p => p.id === config.activeProvider);
-  const hasApiKey = activeProvider?.id === 'opencode' || !!activeProvider?.apiKey;
-
-  const updateConfig = useCallback((updates: Partial<AppConfig>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+  const updateConfig = useCallback((upd: Partial<AppConfig>) => setConfig(p => ({ ...p, ...upd })), []);
+  const updateProvider = useCallback((id: string, p: Partial<Provider>) => {
+    setConfig(prev => ({ ...prev, providers: prev.providers.map(x => x.id === id ? { ...x, ...p } : x) }));
   }, []);
 
-  const sendMessage = useCallback(async (content: string) => {
-    if (!content.trim() || isGenerating) return;
+  const activeProvider = config.providers.find(p => p.id === config.activeProvider);
+  const hasApiKey = !!activeProvider?.apiKey;
 
-    // Handle slash commands
-    const trimmed = content.trim();
-    if (trimmed.startsWith('/')) {
-      handleSlashCommand(trimmed);
+  const handleApprove = (id: string, ok: boolean) => {
+    setPendingApproval(null);
+    approvalRef.current?.(ok);
+    approvalRef.current = null;
+  };
+
+  const send = useCallback(async (content: string) => {
+    if (!content.trim() || isGenerating) return;
+    if (!hasApiKey && activeProvider?.id !== 'opencode') {
+      alert(`Configura tu API key de ${activeProvider?.name} en Ajustes (⚙️).`);
+      setView('settings');
       return;
     }
 
     abortRef.current = false;
 
-    const userMsg: OpenCodeMessage = {
-      id: `msg_${Date.now()}`,
-      role: 'user',
-      content: trimmed,
-      timestamp: Date.now(),
-    };
+    // Handle slash commands locally
+    const trimmed = content.trim();
+    if (trimmed === '/clear') { setMessages([]); return; }
+    if (trimmed === '/help') {
+      setMessages(prev => [...prev, makeUser(content), makeAssistant(
+        `**Comandos:**\n- /clear — limpia el chat\n- /help — ayuda\n- /model — cambia modelo (abre ajustes)\n\n**Herramientas:**\nshell, file_read/write/edit/append, list_dir, glob, grep, web_fetch, web_search, mkdir, rm, mv, cp, todo_*, memory_*, clipboard_*, notify, device_info`,
+        config,
+      )]);
+      return;
+    }
+    if (trimmed === '/model') { setView('settings'); return; }
 
-    const assistantMsg: OpenCodeMessage = {
-      id: `msg_${Date.now() + 1}`,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now() + 1,
-      isStreaming: true,
-      toolCalls: [],
-      thinking: '',
-      model: config.activeModel,
-      provider: config.activeProvider,
-    };
+    const userMsg = makeUser(content);
+    const asstMsg = makeAssistant('', config);
+    asstMsg.isStreaming = true;
 
-    const newMessages = [...messages, userMsg, assistantMsg];
-    setMessages(newMessages);
+    const next = [...messages, userMsg, asstMsg];
+    setMessages(next);
     setIsGenerating(true);
 
-    const previousMessages = newMessages.slice(0, -1);
-    const apiHistory = chatMessagesToApiMessages(previousMessages.filter(m =>
-      m.role === 'user' || m.role === 'assistant'
-    ));
-
-    let fullContent = '';
+    const history = chatMessagesToApiMessages(next.slice(0, -2));
+    let fullText = '';
     let fullThinking = '';
-    const toolCalls: OpenCodeToolCall[] = [];
-    const toolCallMap = new Map<string, OpenCodeToolCall>();
+    const toolMap = new Map<string, OpenCodeToolCall>();
 
     try {
-      await runAgentLoop(config, apiHistory, trimmed, {
-        onStateChange: (state) => {
-          setAgentState(state);
+      await runAgentLoop(config, history, trimmed, {
+        onStateChange: setAgentState,
+        onContent: (t) => {
+          fullText += t;
+          setMessages(prev => updateLast(prev, m => ({ ...m, content: fullText })));
         },
-
-        onContent: (text) => {
-          fullContent += text;
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, content: fullContent };
-            }
-            return updated;
-          });
+        onThinking: (t) => {
+          fullThinking += t;
+          setMessages(prev => updateLast(prev, m => ({ ...m, thinking: fullThinking })));
         },
-
-        onThinking: (text) => {
-          fullThinking += text;
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, thinking: fullThinking };
-            }
-            return updated;
-          });
-        },
-
         onToolCall: (tc) => {
-          toolCalls.push(tc);
-          toolCallMap.set(tc.id, tc);
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, toolCalls: [...toolCalls] };
-            }
-            return updated;
-          });
+          toolMap.set(tc.id, tc);
+          setMessages(prev => updateLast(prev, m => ({ ...m, toolCalls: [...(m.toolCalls || []), tc] })));
         },
-
-        onToolStart: (toolCallId) => {
-          const tc = toolCallMap.get(toolCallId);
-          if (tc) {
-            tc.status = 'running';
-            setMessages(prev => [...prev]);
-          }
+        onToolStart: (id) => {
+          const tc = toolMap.get(id);
+          if (tc) { tc.status = 'running'; setMessages(prev => [...prev]); }
         },
-
-        onToolResult: (toolCallId, output, error) => {
-          const tc = toolCallMap.get(toolCallId);
+        onToolResult: (id, output, error) => {
+          const tc = toolMap.get(id);
           if (tc) {
             tc.output = output;
-            tc.status = error ? 'error' : 'completed';
+            tc.status = error === 'denied' ? 'denied' : (error ? 'error' : 'completed');
             setMessages(prev => [...prev]);
           }
         },
-
-        onToolApproval: async (tc) => {
-          const existing = toolCallMap.get(tc.id);
-          if (existing) {
-            existing.status = 'waiting_approval';
-            existing.requiresApproval = true;
-          }
-          setMessages(prev => [...prev]);
-
-          return new Promise<boolean>((resolve) => {
-            (window as any).__openCodeApprovalResolvers = (window as any).__openCodeApprovalResolvers || {};
-            (window as any).__openCodeApprovalResolvers[tc.id] = resolve;
-          });
+        onToolApproval: (tc) => {
+          setPendingApproval(tc);
+          return new Promise<boolean>((resolve) => { approvalRef.current = resolve; });
         },
-
+        onUsage: (u) => {
+          setMessages(prev => updateLast(prev, m => ({ ...m, usage: u })));
+        },
         onDone: () => {
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last.role === 'assistant') {
-              updated[updated.length - 1] = {
-                ...last,
-                isStreaming: false,
-                content: fullContent,
-                toolCalls: [...toolCalls],
-                thinking: fullThinking || undefined,
-              };
-            }
-            return updated;
-          });
+          setMessages(prev => updateLast(prev, m => ({ ...m, isStreaming: false })));
+          if (config.hapticFeedback) vibrate(20);
         },
-
-        onError: (error) => {
-          fullContent += `\n\n**Error:** ${error}`;
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, content: fullContent, isStreaming: false };
-            }
-            return updated;
-          });
+        onError: (err) => {
+          setMessages(prev => updateLast(prev, m => ({ ...m, isStreaming: false, error: err })));
+          if (config.hapticFeedback) vibrate(80);
         },
-
         shouldAbort: () => abortRef.current,
       });
-
     } catch (err: any) {
-      setMessages(prev => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last.role === 'assistant') {
-          updated[updated.length - 1] = {
-            ...last,
-            content: fullContent || `Error: ${err.message}`,
-            isStreaming: false,
-            toolCalls: [...toolCalls],
-          };
-        }
-        return updated;
-      });
+      setMessages(prev => updateLast(prev, m => ({ ...m, isStreaming: false, error: err?.message || String(err) })));
     } finally {
       setIsGenerating(false);
       setAgentState({ status: 'idle', currentStep: 0, totalSteps: 0 });
     }
-  }, [config, messages, isGenerating]);
+  }, [messages, config, isGenerating, hasApiKey, activeProvider]);
 
-  const handleSlashCommand = (command: string) => {
-    const cmd = command.toLowerCase().split(' ')[0];
-    switch (cmd) {
-      case '/compact': {
-        // Summarize conversation
-        const lastMsg = messages[messages.length - 1];
-        const summaryMsg: OpenCodeMessage = {
-          id: `msg_${Date.now()}`,
-          role: 'assistant',
-          content: `*Conversation compacted. ${messages.length} messages summarized.*`,
-          timestamp: Date.now(),
-        };
-        setMessages([summaryMsg]);
-        break;
-      }
-      case '/models': {
-        const provider = config.providers.find(p => p.id === config.activeProvider);
-        const modelList = provider?.models.map(m => `  ${m.id} - ${m.name}`).join('\n') || 'No models available';
-        const msg: OpenCodeMessage = {
-          id: `msg_${Date.now()}`,
-          role: 'assistant',
-          content: `**Available Models** (${provider?.name || 'Unknown'}):\n\`\`\`\n${modelList}\n\`\`\`\nCurrent: \`${config.activeModel}\``,
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, {
-          id: `msg_${Date.now() - 1}`,
-          role: 'user',
-          content: command,
-          timestamp: Date.now() - 1,
-        }, msg]);
-        break;
-      }
-      case '/help': {
-        const helpMsg: OpenCodeMessage = {
-          id: `msg_${Date.now()}`,
-          role: 'assistant',
-          content: `**OpenCode Commands:**\n\n` +
-            `• \`/compact\` — Compact conversation to reduce context\n` +
-            `• \`/models\` — Show available models\n` +
-            `• \`/help\` — Show this help\n\n` +
-            `**Special Input:**\n` +
-            `• \`!command\` — Execute a shell command directly\n` +
-            `• \`@filename\` — Reference a file\n\n` +
-            `**Current Model:** \`${config.activeModel}\`\n` +
-            `**Provider:** ${activeProvider?.name || 'None'}`,
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, {
-          id: `msg_${Date.now() - 1}`,
-          role: 'user',
-          content: command,
-          timestamp: Date.now() - 1,
-        }, helpMsg]);
-        break;
-      }
-      default: {
-        // Treat unknown commands as regular messages (pass to AI)
-        sendMessage(command);
-      }
-    }
-  };
-
-  const approveToolCall = useCallback(async (msgId: string, toolCallId: string) => {
-    const resolvers = (window as any).__openCodeApprovalResolvers;
-    if (resolvers && resolvers[toolCallId]) {
-      resolvers[toolCallId](true);
-      delete resolvers[toolCallId];
-    }
-
-    setMessages(prev => {
-      const updated = prev.map(m => {
-        if (m.id === msgId && m.toolCalls) {
-          return {
-            ...m,
-            toolCalls: m.toolCalls.map(tc =>
-              tc.id === toolCallId ? { ...tc, status: 'running' as const } : tc
-            ),
-          };
-        }
-        return m;
-      });
-      return updated;
-    });
-  }, []);
-
-  const denyToolCall = useCallback((msgId: string, toolCallId: string) => {
-    const resolvers = (window as any).__openCodeApprovalResolvers;
-    if (resolvers && resolvers[toolCallId]) {
-      resolvers[toolCallId](false);
-      delete resolvers[toolCallId];
-    }
-
-    setMessages(prev => {
-      const updated = prev.map(m => {
-        if (m.id === msgId && m.toolCalls) {
-          return {
-            ...m,
-            toolCalls: m.toolCalls.map(tc =>
-              tc.id === toolCallId ? { ...tc, status: 'error' as const, output: 'Denied by user' } : tc
-            ),
-          };
-        }
-        return m;
-      });
-      return updated;
-    });
-  }, []);
-
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    localStorage.removeItem('opencode_messages');
-  }, []);
-
-  const stopGeneration = useCallback(() => {
+  const stop = useCallback(() => {
     abortRef.current = true;
     setIsGenerating(false);
     setAgentState({ status: 'idle', currentStep: 0, totalSteps: 0 });
+    setMessages(prev => updateLast(prev, m => ({ ...m, isStreaming: false })));
   }, []);
 
+  const clearChat = useCallback(() => {
+    if (messages.length && !confirm('¿Limpiar todo el chat?')) return;
+    setMessages([]);
+  }, [messages.length]);
+
+  const resetConfig = useCallback(() => {
+    setConfig(DEFAULT_CONFIG);
+    localStorage.removeItem('oc_config');
+    localStorage.setItem('oc_config_version', String(CONFIG_VERSION));
+  }, []);
+
+  const modelChipText = activeProvider
+    ? `${activeProvider.emoji || ''} ${activeProvider.models.find(m => m.id === config.activeModel)?.name || config.activeModel}`
+    : 'Sin modelo';
+
   return (
-    <div style={{
-      height: '100vh',
-      width: '100vw',
-      display: 'flex',
-      background: 'var(--bg-primary)',
-      overflow: 'hidden',
-      position: 'relative',
-    }}>
-      <Sidebar
-        config={config}
-        updateConfig={updateConfig}
-        view={view}
-        setView={setView}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onClear={clearMessages}
-        messageCount={messages.length}
-      />
-
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        overflow: 'hidden',
-      }}>
-        {/* Top Bar */}
-        <div className="acrylic" style={{
-          height: 48,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 var(--space-md)',
-          gap: 'var(--space-sm)',
-          borderBottom: '1px solid var(--border-primary)',
-          zIndex: 100,
-        }}>
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: 'var(--space-sm)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 20,
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            ☰
-          </button>
-
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-sm)',
-            flex: 1,
-          }}>
-            <span style={{
-              color: 'var(--accent-green)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 14,
-              fontWeight: 700,
-            }}>
-              {'>'}_
-            </span>
-            <span style={{
-              fontSize: 13,
-              color: 'var(--text-primary)',
-              fontWeight: 600,
-            }}>
-              OpenCode
-            </span>
-            <span style={{
-              fontSize: 11,
-              color: 'var(--text-tertiary)',
-            }}>
-              {config.activeModel.split('/').pop()}
-            </span>
-            <div style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: hasApiKey ? 'var(--accent-green)' : 'var(--error)',
-            }} />
-            {agentState.status !== 'idle' && isGenerating && (
-              <span style={{
-                fontSize: 11,
-                color: 'var(--accent-purple)',
-                background: 'rgba(188, 140, 255, 0.1)',
-                padding: '2px 8px',
-                borderRadius: 'var(--radius-full)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-              }}>
-                <span style={{ animation: 'pulse 1s infinite' }}>●</span>
-                Step {agentState.currentStep}
-                {agentState.currentTool ? ` — ${agentState.currentTool}` : ''}
-              </span>
-            )}
-          </div>
-
-          {isGenerating && (
-            <button
-              onClick={stopGeneration}
-              style={{
-                background: 'var(--error)',
-                border: 'none',
-                color: 'white',
-                padding: '4px 12px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
-            >
-              Stop
-            </button>
-          )}
-
-          <button
-            onClick={() => setView('settings')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: view === 'settings' ? 'var(--accent-green)' : 'var(--text-tertiary)',
-              cursor: 'pointer',
-              fontSize: 18,
-              padding: 'var(--space-sm)',
-            }}
-          >
-            ⚙
-          </button>
+    <div className="app" data-theme={config.theme}>
+      <div className="topbar">
+        <div className="brand">
+          <div className="brand-icon">◆</div>
+          <span>OpenCode</span>
         </div>
-
-        {/* View Content */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          {(view === 'chat') && (
-            <OpenCodeChat
-              messages={messages}
-              onSend={sendMessage}
-              isGenerating={isGenerating}
-              onApprove={approveToolCall}
-              onDeny={denyToolCall}
-              config={config}
-              agentState={agentState}
-            />
-          )}
-          {view === 'terminal' && (
-            <TerminalView config={config} />
-          )}
-          {view === 'files' && (
-            <FileExplorer config={config} />
-          )}
-          {view === 'settings' && (
-            <SettingsView config={config} updateConfig={updateConfig} />
-          )}
-          {view === 'opencode-setup' && (
-            <SettingsView config={config} updateConfig={updateConfig} initialTab="opencode" />
-          )}
-        </div>
+        <div className="spacer" />
+        <button className="model-chip" onClick={() => setView('settings')} title="Cambiar modelo">
+          <span className="dot" /> {modelChipText}
+        </button>
       </div>
+
+      <div className="main">
+        {view === 'chat' && (
+          <ChatView
+            messages={messages}
+            config={config}
+            agentState={agentState}
+            isGenerating={isGenerating}
+            onSend={send}
+            onStop={stop}
+            onClear={clearChat}
+            onApprove={handleApprove}
+            pendingApproval={pendingApproval}
+          />
+        )}
+        {view === 'terminal' && <TerminalView config={config} onConfigChange={setConfig} />}
+        {view === 'files' && <FileExplorer initialPath={config.workingDir} />}
+        {view === 'settings' && (
+          <SettingsView config={config} onChange={updateConfig} onChangeProvider={updateProvider} onReset={resetConfig} />
+        )}
+        {view === 'about' && <AboutView />}
+      </div>
+
+      <nav className="bottom-nav">
+        <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>
+          <span className="ico">💬</span>Chat
+        </button>
+        <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')}>
+          <span className="ico">⌨️</span>Terminal
+        </button>
+        <button className={view === 'files' ? 'active' : ''} onClick={() => setView('files')}>
+          <span className="ico">📁</span>Archivos
+        </button>
+        <button className={view === 'settings' || view === 'about' ? 'active' : ''} onClick={() => setView(view === 'settings' ? 'about' : 'settings')}>
+          <span className="ico">{view === 'settings' ? 'ℹ️' : '⚙️'}</span>{view === 'settings' ? 'Acerca' : 'Ajustes'}
+        </button>
+      </nav>
     </div>
   );
 }
 
-declare global {
-  interface Window {
-    __openCodeApprovalResolvers?: Record<string, (approved: boolean) => void>;
-  }
+function makeUser(text: string): OpenCodeMessage {
+  return { id: `m_${Date.now()}_u`, role: 'user', content: text, timestamp: Date.now() };
+}
+
+function makeAssistant(text: string, config: AppConfig): OpenCodeMessage {
+  return {
+    id: `m_${Date.now()}_a`,
+    role: 'assistant',
+    content: text,
+    timestamp: Date.now(),
+    toolCalls: [],
+    thinking: '',
+    model: config.activeModel,
+    provider: config.activeProvider,
+  };
+}
+
+function updateLast(arr: OpenCodeMessage[], fn: (m: OpenCodeMessage) => OpenCodeMessage): OpenCodeMessage[] {
+  if (!arr.length) return arr;
+  const copy = arr.slice();
+  copy[copy.length - 1] = fn(copy[copy.length - 1]);
+  return copy;
 }
